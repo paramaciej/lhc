@@ -1,5 +1,5 @@
 module Utils.Position
-    ( Position (Position)
+    ( Position (Position, begin, end)
     , Positioned (position)
     ) where
 

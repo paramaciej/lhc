@@ -6,12 +6,17 @@ import qualified AbsLatte as L
 import Utils.Position
 import Utils.Show
 
+import System.Console.ANSI
 import Data.Maybe
+import Data.List
 
 data AbsPos a = AbsPos {pos :: Maybe Position, strRep :: Maybe String, aa :: a}
 
 instance Show a => Show (AbsPos a) where
     show x = fromMaybe (absShow x) (strRep x)
+
+instance Eq a => Eq (AbsPos a) where
+    x == y = aa x == aa y
 
 absShow :: Show a => AbsPos a -> String
 absShow = show . aa
@@ -22,10 +27,16 @@ makeAbs = AbsPos Nothing Nothing
 forgetPos :: AbsPos a -> AbsPos a
 forgetPos (AbsPos _ _ x) = AbsPos Nothing Nothing x
 
+ignorePos :: (a -> b) -> AbsPos a -> b
+ignorePos f x = f (aa x)
+
 type Ident = AbsPos AIdent
 data AIdent = Ident
     { identString :: String
-    } deriving Show
+    }
+
+instance Show AIdent where
+    show = identString
 
 type Program = AbsPos AProgram
 data AProgram = Program
@@ -78,7 +89,15 @@ data AType
     | Bool
     | Void
     | Fun Type [Type]
-  deriving Show
+  deriving Eq
+
+instance Show AType where
+    show Int = colorize [SetColor Foreground Vivid Blue] "int"
+    show Str = colorize [SetColor Foreground Vivid Magenta] "string"
+    show Bool = colorize [SetColor Foreground Vivid Cyan] "boolean"
+    show Void = colorize [SetColor Foreground Vivid Cyan] "void"
+    show (Fun t args) = "(" ++ intercalate ", " (map absShow args) ++ ")"
+        ++ colorize [SetColor Foreground Dull Yellow] " -> " ++ show t
 
 type Expr = AbsPos AExpr
 data AExpr
@@ -94,20 +113,49 @@ data AExpr
     | ERel Expr RelOp Expr
     | EAnd Expr Expr
     | EOr Expr Expr
-  deriving Show
+
+instance Show AExpr where
+    show (EVar ident) = absShow ident
+    show (ELitInt int) = colorize [SetColor Foreground Dull Blue] $ show int
+    show (ELitBool bool) = colorize [SetColor Foreground Dull Cyan] $ if bool then "true" else "false"
+    show (EApp ident args) = absShow ident ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
+    show (EString str) = colorize [SetColor Foreground Dull Magenta] str
+    show (Neg expr) = "-" ++ absShow expr
+    show (Not expr) = "!" ++ absShow expr
+    show (EMul e1 op e2) = absShow e1 ++ " " ++ absShow op ++ " " ++ absShow e2
+    show (EAdd e1 op e2) = absShow e1 ++ " " ++ absShow op ++ " " ++ absShow e2
+    show (ERel e1 op e2) = absShow e1 ++ " " ++ absShow op ++ " " ++ absShow e2
+    show (EAnd e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " && " ++ absShow e2
+    show (EAnd e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " || " ++ absShow e2
 
 type MulOp = AbsPos AMulOp
 data AMulOp = Times | Div | Mod
-  deriving Show
+
+instance Show AMulOp where
+    show op = colorize [SetColor Foreground Vivid Yellow] $ case op of
+        Times -> "*"
+        Div -> "/"
+        Mod -> "%"
 
 type AddOp = AbsPos AAddOp
 data AAddOp = Plus | Minus
-  deriving Show
+
+instance Show AAddOp where
+    show op = colorize [SetColor Foreground Vivid Yellow] $ case op of
+        Plus -> "+"
+        Minus -> "-"
 
 type RelOp = AbsPos ARelOp
 data ARelOp = LTH | LEQ | GTH | GEQ | EQU | NEQ
-  deriving Show
 
+instance Show ARelOp where
+    show op = colorize [SetColor Foreground Vivid Yellow] $ case op of
+        LTH -> "<"
+        LEQ -> "<="
+        GTH -> ">"
+        GEQ -> ">="
+        EQU -> "=="
+        NEQ -> "="
 
 class (ColorShow a, Positioned a) => ToAbstract a b where
     _to :: a -> b

@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 module Utils.Show
     ( ColorShow (cShow, posShow, fullShow)
+    , colorize
     ) where
 
 import System.Console.ANSI
@@ -22,8 +23,11 @@ csLength [] = 0
 csLength (CC _ : xs) = csLength xs
 csLength (CS str : xs) = length str + csLength xs
 
-colorize :: [SGR] -> String -> CStr
-colorize sgrs str = [CC sgrs, CS str, CC [Reset]]
+colorizeCStr :: [SGR] -> String -> CStr
+colorizeCStr sgrs str = [CC sgrs, CS str, CC [Reset]]
+
+colorize :: [SGR] -> String -> String
+colorize c = csShow . colorizeCStr c
 
 toCStr :: String -> CStr
 toCStr a = [CS a]
@@ -61,21 +65,21 @@ class Positioned a => ColorShow a where
 
 
 instance ColorShow PInt where
-    stShow (PInt x) = addFromToken x (colorize [SetColor Foreground Vivid Blue])
+    stShow (PInt x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Blue])
 instance ColorShow PStr where
-    stShow (PStr x) = addFromToken x (colorize [SetColor Foreground Vivid Red])
+    stShow (PStr x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Magenta])
 instance ColorShow PBool where
-    stShow (PBool x) = addFromToken x (colorize [SetColor Foreground Vivid Magenta])
+    stShow (PBool x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Cyan])
 instance ColorShow PVoid where
-    stShow (PVoid x) = addFromToken x (colorize [SetColor Foreground Vivid Magenta])
+    stShow (PVoid x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Cyan])
 instance ColorShow PRet where
-    stShow (PRet x) = addFromToken x (colorize [SetColor Foreground Vivid Green])
+    stShow (PRet x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
 instance ColorShow PIf where
-    stShow (PIf x) = addFromToken x (colorize [SetColor Foreground Vivid Green])
+    stShow (PIf x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
 instance ColorShow PElse where
-    stShow (PElse x) = addFromToken x (colorize [SetColor Foreground Vivid Green])
+    stShow (PElse x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
 instance ColorShow PWhile where
-    stShow (PWhile x) = addFromToken x (colorize [SetColor Foreground Vivid Green])
+    stShow (PWhile x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
 instance ColorShow PSemicolon where
     stShow (PSemicolon x) = addFromToken x toCStr
 instance ColorShow PCurlyBegin where
@@ -93,41 +97,41 @@ instance ColorShow PIncr where
 instance ColorShow PDecr where
     stShow (PDecr x) = addFromToken x toCStr
 instance ColorShow PPlus where
-    stShow (PPlus x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PPlus x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PMinus where
-    stShow (PMinus x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PMinus x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PTimes where
-    stShow (PTimes x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PTimes x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PDiv where
-    stShow (PDiv x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PDiv x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PMod where
-    stShow (PMod x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PMod x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PLTH where
-    stShow (PLTH x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PLTH x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PLE where
-    stShow (PLE x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PLE x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PGTH where
-    stShow (PGTH x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PGTH x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PGE where
-    stShow (PGE x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PGE x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PEQU where
-    stShow (PEQU x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PEQU x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PNE where
-    stShow (PNE x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PNE x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PNot where
-    stShow (PNot x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PNot x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PAnd where
-    stShow (PAnd x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (PAnd x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow POr where
-    stShow (POr x) = addFromToken x (colorize [SetColor Foreground Vivid Yellow])
+    stShow (POr x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Yellow])
 instance ColorShow PFalse where
-    stShow (PFalse x) = addFromToken x (colorize [SetColor Foreground Dull Magenta])
+    stShow (PFalse x) = addFromToken x (colorizeCStr [SetColor Foreground Dull Cyan])
 instance ColorShow PTrue where
-    stShow (PTrue x) = addFromToken x (colorize [SetColor Foreground Dull Magenta])
+    stShow (PTrue x) = addFromToken x (colorizeCStr [SetColor Foreground Dull Cyan])
 instance ColorShow PInteger where
-    stShow (PInteger x) = addFromToken x (colorize [SetColor Foreground Dull Blue])
+    stShow (PInteger x) = addFromToken x (colorizeCStr [SetColor Foreground Dull Blue])
 instance ColorShow PString where
-    stShow (PString x) = addFromToken x (colorize [SetColor Foreground Dull Red])
+    stShow (PString x) = addFromToken x (colorizeCStr [SetColor Foreground Dull Magenta])
 instance ColorShow PIdent where
     stShow (PIdent x) = addFromToken x toCStr
 
