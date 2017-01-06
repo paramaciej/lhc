@@ -4,81 +4,81 @@ entrypoints Program ;
 
 Program.   Program ::= [TopDef] ;
 
-FnDef.	   TopDef ::= Type Ident "(" [Arg] ")" Block ;
+FnDef.	   TopDef ::= Type PIdent PParBegin [Arg] PParEnd Block ;
 
 separator nonempty TopDef "" ;
 
-Arg. 	   Arg ::= Type Ident;
+Arg. 	   Arg ::= Type PIdent;
 
 separator  Arg "," ;
 
 -- statements ----------------------------------------------
 
-Block.     Block ::= "{" [Stmt] "}" ;
+Block.     Block ::= PCurlyBegin [Stmt] PCurlyEnd ;
 
 separator  Stmt "" ;
 
-Empty.     Stmt ::= ";" ;
+Empty.     Stmt ::= PSemicolon ;
 
 BStmt.     Stmt ::= Block ;
 
-Decl.      Stmt ::= Type [Item] ";" ;
+Decl.      Stmt ::= Type [Item] PSemicolon ;
 
-NoInit.    Item ::= Ident ;
+NoInit.    Item ::= PIdent ;
 
-Init.      Item ::= Ident "=" Expr ;
+Init.      Item ::= PIdent PAss Expr ;
 
 separator nonempty Item "," ;
 
-Ass.       Stmt ::= Ident "=" Expr  ";" ;
+Ass.       Stmt ::= PIdent PAss Expr  PSemicolon ;
 
-Incr.      Stmt ::= Ident "++"  ";" ;
+Incr.      Stmt ::= PIdent PIncr  PSemicolon ;
 
-Decr.      Stmt ::= Ident "--"  ";" ;
+Decr.      Stmt ::= PIdent PDecr  PSemicolon ;
 
-Ret.       Stmt ::= "return" Expr ";" ;
+Ret.       Stmt ::= PRet Expr PSemicolon ;
 
-VRet.      Stmt ::= "return" ";" ;
+VRet.      Stmt ::= PRet PSemicolon ;
 
-Cond.      Stmt ::= "if" "(" Expr ")" Stmt  ;
+Cond.      Stmt ::= PIf PParBegin Expr PParEnd Stmt  ;
 
-CondElse.  Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt  ;
+CondElse.  Stmt ::= PIf PParBegin Expr PParEnd Stmt PElse Stmt  ;
 
-While.     Stmt ::= "while" "(" Expr ")" Stmt ;
+While.     Stmt ::= PWhile PParBegin Expr PParEnd Stmt ;
 
-SExp.      Stmt ::= Expr  ";" ;
+SExp.      Stmt ::= Expr  PSemicolon ;
 
 -- Types ---------------------------------------------------
 
-Int.       Type ::= "int" ;
+Int.       Type ::= PInt ;
 
-Str.       Type ::= "string" ;
+Str.       Type ::= PStr ;
 
-Bool.      Type ::= "boolean" ;
+Bool.      Type ::= PBool ;
 
-Void.      Type ::= "void" ;
+Void.      Type ::= PVoid ;
 
-internal   Fun. Type ::= Type "(" [Type] ")" ;
+internal   Fun. Type ::= Type PParBegin [Type] PParEnd ;
 
 separator  Type "," ;
 
 -- Expressions ---------------------------------------------
 
-EVar.      Expr6 ::= Ident ;
+EVar.      Expr6 ::= PIdent ;
 
-ELitInt.   Expr6 ::= Integer ;
+ELitInt.   Expr6 ::= PInteger ;
 
-ELitTrue.  Expr6 ::= "true" ;
+ELitTrue.  Expr6 ::= PTrue ;
 
-ELitFalse. Expr6 ::= "false" ;
+ELitFalse. Expr6 ::= PFalse ;
 
-EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
+EApp.      Expr6 ::= PIdent PParBegin [Expr] PParEnd ;
 
-EString.   Expr6 ::= String ;
+EString.   Expr6 ::= PString ;
 
-Neg.       Expr5 ::= "-" Expr6 ;
+Neg.       Expr5 ::= PMinus Expr6 ;
 
-Not.       Expr5 ::= "!" Expr6 ;
+Not.       Expr5 ::= PNot Expr6 ;
 
 EMul.      Expr4 ::= Expr4 MulOp Expr5 ;
 
@@ -86,37 +86,44 @@ EAdd.      Expr3 ::= Expr3 AddOp Expr4 ;
 
 ERel.      Expr2 ::= Expr2 RelOp Expr3 ;
 
-EAnd.      Expr1 ::= Expr2 "&&" Expr1 ;
+EAnd.      Expr1 ::= Expr2 PAnd Expr1 ;
 
-EOr.       Expr ::= Expr1 "||" Expr ;
+EOr.       Expr ::= Expr1 POr Expr ;
 
-coercions  Expr 6 ;
+_.         Expr ::= Expr1 ;
+_.         Expr1 ::= Expr2 ;
+_.         Expr2 ::= Expr3 ;
+_.         Expr3 ::= Expr4 ;
+_.         Expr4 ::= Expr5 ;
+_.         Expr5 ::= Expr6 ;
+ECoerc.    Expr6 ::= PParBegin Expr PParEnd ;
+
 
 separator  Expr "," ;
 
 -- operators -----------------------------------------------
 
-Plus.      AddOp ::= "+" ;
+Plus.      AddOp ::= PPlus ;
 
-Minus.     AddOp ::= "-" ;
+Minus.     AddOp ::= PMinus ;
 
-Times.     MulOp ::= "*" ;
+Times.     MulOp ::= PTimes ;
 
-Div.       MulOp ::= "/" ;
+Div.       MulOp ::= PDiv ;
 
-Mod.       MulOp ::= "%" ;
+Mod.       MulOp ::= PMod ;
 
-LTH.       RelOp ::= "<" ;
+LTH.       RelOp ::= PLTH ;
 
-LE.        RelOp ::= "<=" ;
+LE.        RelOp ::= PLE ;
 
-GTH.       RelOp ::= ">" ;
+GTH.       RelOp ::= PGTH ;
 
-GE.        RelOp ::= ">=" ;
+GE.        RelOp ::= PGE ;
 
-EQU.       RelOp ::= "==" ;
+EQU.       RelOp ::= PEQU ;
 
-NE.        RelOp ::= "!=" ;
+NE.        RelOp ::= PNE ;
 
 -- comments ------------------------------------------------
 
@@ -125,3 +132,50 @@ comment    "#" ;
 comment    "//" ;
 
 comment    "/*" "*/" ;
+
+-- position token ------------------------------------------
+
+position token PInt {"int"};
+position token PStr {"string"};
+position token PBool {"boolean"};
+position token PVoid {"void"};
+
+position token PRet {"return"};
+position token PIf {"if"};
+position token PElse {"else"};
+position token PWhile {"while"};
+
+position token PSemicolon {";"};
+position token PCurlyBegin {"{"};
+position token PCurlyEnd {"}"};
+position token PParBegin {"("};
+position token PParEnd {")"};
+
+position token PAss {"="};
+
+position token PIncr {"++"};
+position token PDecr {"--"};
+
+position token PPlus {"+"};
+position token PMinus {"-"};
+position token PTimes {"*"};
+position token PDiv {"/"};
+position token PMod {"%"};
+
+position token PLTH {"<"};
+position token PLE {"<="};
+position token PGTH {">"};
+position token PGE {">="};
+position token PEQU {"=="};
+position token PNE {"!="};
+
+position token PNot {"!"};
+position token PAnd {"&&"};
+position token POr {"||"};
+
+position token PFalse {"false"};
+position token PTrue {"true"};
+position token PInteger (digit+);
+position token PString ('"' ((char - ["\"\\"]) | ('\\' ["\"\\nt"]))* '"');
+
+position token PIdent (letter (letter | digit | '_' | '\'')*);

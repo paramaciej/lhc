@@ -4,3 +4,13 @@
 lhc.iml
 latc
 latc_x86
+bnfc
+
+src/AbsLatte.hs
+src/DocLatte.txt
+src/ErrM.hs
+src/LexLatte.x
+src/ParLatte.y
+src/PrintLatte.hs
+src/SkelLatte.hs
+src/TestLatte.hs
