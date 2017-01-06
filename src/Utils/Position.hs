@@ -1,4 +1,7 @@
-module Utils.Position where
+module Utils.Position
+    ( Position (Position)
+    , Positioned (position)
+    ) where
 
 import AbsLatte
 import System.Console.ANSI
@@ -13,7 +16,12 @@ calculate (begin@(row, col), string) = Position begin (row, col + length string)
 data Position = Position
     { begin :: (Int, Int)
     , end :: (Int, Int)
-    } deriving Show
+    }
+
+instance Show Position where
+    show (Position (bL, bC) (eL, eC))
+        | bL == eL  = show bL ++ ":" ++ show bC ++ "-" ++ show eC
+        | otherwise = show bL ++ ":" ++ show bC ++ "-" ++ show eL ++ ":" ++ show eC
 
 class Positioned a where
     position :: a -> Position
@@ -142,6 +150,7 @@ instance Positioned Expr where
     position (ERel e1 _ e2)     = combineBeginEnd e1 e2
     position (EAnd e1 _ e2)     = combineBeginEnd e1 e2
     position (EOr e1 _ e2)      = combineBeginEnd e1 e2
+    position (ECoerc pB _ pE)   = combineBeginEnd pB pE
 
 instance Positioned AddOp where
     position (Plus x)   = position x

@@ -1,5 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
-module Utils.Show where
+module Utils.Show
+    ( ColorShow (cShow, posShow, fullShow)
+    ) where
 
 import System.Console.ANSI
 import Control.Monad.State
@@ -46,16 +48,13 @@ csvShow [] = return ()
 csvShow (x:xs) = stShow x >> mapM_ (\c -> addStr "," >> stShow c) xs
 
 class Positioned a => ColorShow a where
-
     stShow :: a -> State [CStr] ()
 
     cShow :: a -> String
     cShow a = unlines $ dropWhile null $ reverse $ dropWhile null $ map csShow $ execState (stShow a) []
 
     posShow :: a -> String
-    posShow a = let Position (bL, bC) (eL, eC) = position a in if bL == eL
-        then show bL ++ ":" ++ show bC ++ "-" ++ show eC
-        else show bL ++ ":" ++ show bC ++ "-" ++ show eL ++ ":" ++ show eC
+    posShow = show . position
 
     fullShow :: a -> String
     fullShow a = "in " ++ posShow a ++ ":\n" ++ cShow a
