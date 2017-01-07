@@ -16,7 +16,7 @@ calculate (begin@(row, col), string) = Position begin (row, col + length string)
 data Position = Position
     { begin :: (Int, Int)
     , end :: (Int, Int)
-    }
+    } deriving Eq
 
 instance Show Position where
     show (Position (bL, bC) (eL, eC))

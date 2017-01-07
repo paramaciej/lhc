@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Utils.Abstract where
 
@@ -7,19 +8,28 @@ import Utils.Position
 import Utils.Show
 
 import System.Console.ANSI
+import Control.Lens hiding (Empty)
 import Data.Maybe
 import Data.List
 
-data AbsPos a = AbsPos {pos :: Maybe Position, strRep :: Maybe String, aa :: a}
+data AbsPos a = AbsPos
+    { _pos :: Maybe Position
+    , _strRep :: Maybe String
+    , _aa :: a}
+
+makeLenses ''AbsPos
 
 instance Show a => Show (AbsPos a) where
-    show x = fromMaybe (absShow x) (strRep x)
+    show x = fromMaybe (absShow x) (x ^. strRep)
 
 instance Eq a => Eq (AbsPos a) where
-    x == y = aa x == aa y
+    x == y = x ^. aa == y ^. aa
+
+instance Ord a => Ord (AbsPos a) where
+    x `compare` y = (x ^. aa) `compare` (y ^. aa)
 
 absShow :: Show a => AbsPos a -> String
-absShow = show . aa
+absShow = show . (^. aa)
 
 makeAbs :: a -> AbsPos a
 makeAbs = AbsPos Nothing Nothing
@@ -28,12 +38,12 @@ forgetPos :: AbsPos a -> AbsPos a
 forgetPos (AbsPos _ _ x) = AbsPos Nothing Nothing x
 
 ignorePos :: (a -> b) -> AbsPos a -> b
-ignorePos f x = f (aa x)
+ignorePos f x = f (x ^. aa)
 
 type Ident = AbsPos AIdent
 data AIdent = Ident
     { identString :: String
-    }
+    } deriving (Eq, Ord)
 
 instance Show AIdent where
     show = identString
@@ -61,6 +71,9 @@ type Block = AbsPos ABlock
 data ABlock = Block
     { blockStmts :: [Stmt]
     } deriving Show
+
+sameBlock :: Block -> Block -> Bool
+b1 `sameBlock` b2 = b1 ^. pos == b2 ^. pos
 
 type Stmt = AbsPos AStmt
 data AStmt
@@ -97,7 +110,7 @@ instance Show AType where
     show Bool = colorize [SetColor Foreground Vivid Cyan] "boolean"
     show Void = colorize [SetColor Foreground Vivid Cyan] "void"
     show (Fun t args) = "(" ++ intercalate ", " (map absShow args) ++ ")"
-        ++ colorize [SetColor Foreground Dull Yellow] " -> " ++ show t
+        ++ colorize [SetColor Foreground Dull Yellow] " -> " ++ absShow t
 
 type Expr = AbsPos AExpr
 data AExpr
