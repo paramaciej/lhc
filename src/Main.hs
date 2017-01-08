@@ -9,6 +9,7 @@ import LexLatte
 import Utils.Position
 import Utils.Show
 import Utils.Abstract as A
+import Utils.ToAbstract
 import Utils.Types
 import Utils.Verbose
 
@@ -28,11 +29,6 @@ main = getArgs >>= \case
         runWithOptions filename True $ case pProgram (myLexer fileContent) of
             Ok program -> do
                 liftIO $ putStrLn $ "OK " ++ fullShow program
-                let aux (name, si) = do
-                        liftIO $ putStrLn $ absShow name ++ " : " ++ show (si ^. typ)
-                        liftIO $ putStrLn "Check..."
-
-                mapM_ aux (toList $ topTypes (toA program))
 
                 programValid (toA program) >>= \case
                     Right () -> liftIO $ putStrLn "ok!"

@@ -24,6 +24,7 @@ executable latc
     Utils.Abstract
     Utils.Position
     Utils.Show
+    Utils.ToAbstract
     Utils.Types
     Utils.Verbose
 

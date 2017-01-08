@@ -1,6 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
 module Utils.Show
     ( ColorShow (cShow, posShow, fullShow)
+    , CStr
+    , csShow
+    , cssShow
+    , csLength
     , colorize
     ) where
 
@@ -17,6 +21,9 @@ csShow :: CStr -> String
 csShow [] = ""
 csShow (CC sgrs : xs) = setSGRCode sgrs ++ csShow xs
 csShow (CS str : xs) = str ++ csShow xs
+
+cssShow :: [CStr] -> String
+cssShow = unlines . map csShow
 
 csLength :: CStr -> Int
 csLength [] = 0
@@ -54,14 +61,14 @@ csvShow (x:xs) = stShow x >> mapM_ (\c -> addStr "," >> stShow c) xs
 class Positioned a => ColorShow a where
     stShow :: a -> State [CStr] ()
 
-    cShow :: a -> String
-    cShow a = unlines $ dropWhile null $ reverse $ dropWhile null $ map csShow $ execState (stShow a) []
+    cShow :: a -> [CStr]
+    cShow a = dropWhile null $ reverse $ dropWhile null $ execState (stShow a) []
 
     posShow :: a -> String
     posShow = show . position
 
     fullShow :: a -> String
-    fullShow a = "in " ++ posShow a ++ ":\n" ++ cShow a
+    fullShow a = "in " ++ posShow a ++ ":\n" ++ cssShow (cShow a)
 
 
 instance ColorShow PInt where

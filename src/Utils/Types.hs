@@ -54,35 +54,48 @@ makeLenses ''InfoSt
 makeLenses ''SymbolInfo
 
 
-topTypes ::Program -> SymbolsSt
-topTypes program = M.fromList $ map (aux . (^. aa)) (programTopDefs $ program ^. aa)
-  where
-    funcType t args = makeAbs $ Fun t (map (argType . (^. aa)) args)
-    aux (FnDef t ident args _) = (ident, SymbolInfo (funcType t args) ident Global Nothing)
+insertTopTypes :: CheckSt ()
+insertTopTypes = do
+    tds <- use (wholeProgram . aa . programTopDefs)
+    let funcType t args = makeAbs $ Fun t (args ^.. traverse . aa . argType)
+    let aux td = putItemIntoState (funcType (td ^. aa . topDefType) (td ^. aa . topDefArgs)) (td ^. aa . topDefIdent) td Global
+    mapM_ aux tds
 
 buildInfoSt :: Program -> InfoSt
-buildInfoSt program = InfoSt (topTypes program) program
+buildInfoSt = InfoSt M.empty
 
 
 programValid :: Program -> CompilerOptsM (Either String ())
-programValid program = evalStateT (runExceptT $ checkProgram program) (buildInfoSt program)
+programValid program = evalStateT (runExceptT checkProgram) (buildInfoSt program)
 
 
-checkProgram :: Program -> CheckSt ()
-checkProgram = ignorePos $ \(Program topDefs) -> mapM_ checkFunction topDefs
+checkProgram :: CheckSt ()
+checkProgram = do
+    insertTopTypes
+    checkMain
+    use (wholeProgram . aa . programTopDefs) >>= mapM_ checkFunction
+
+checkMain :: CheckSt ()
+checkMain = use (symbols . at (makeAbs $ Ident "main")) >>= \case
+        Just main -> do
+            let expectedType = makeAbs (Fun (makeAbs Int) [])
+            unless (main ^. typ == expectedType) $ contextError (main ^. defIdent)
+                ("The `main` function has wrong signature: it should be of type " ++ absShow expectedType
+                    ++ ", but it is of type " ++ absShow (main ^. typ))  >>= throwError
+        Nothing -> throwError "File doesn't contain the `main` function!"
 
 checkFunction :: TopDef -> CheckSt ()
 checkFunction topDef = do
-    let block = topDefBlock $ topDef ^. aa
-    mapM_ (\arg -> putItemIntoState (argType $ arg ^. aa) (argIdent $ arg ^. aa) arg block) (topDefArgs $ topDef ^. aa)
-    let t = topDefType (topDef ^. aa)
-    checkBlock t (topDefBlock $ topDef ^. aa)
+    let defPlace = InBlock $ topDef ^. aa . topDefBlock
+    mapM_ (\arg -> putItemIntoState (arg ^. aa . argType) (arg ^. aa . argIdent) arg defPlace) (topDef ^. aa . topDefArgs)
+    let t = topDef ^. aa . topDefType
+    checkBlock t (topDef ^. aa . topDefBlock)
 
 checkBlock :: Type -> Block -> CheckSt ()
 checkBlock returnType block = do
     ss <- use symbols
     lift $ lift $ verbosePrint $ "Checking block:\n" ++ show block ++ "it has defined:\n" ++ unlines (map show (M.elems ss))
-    mapM_ checkStmt $ blockStmts $ block ^. aa
+    mapM_ checkStmt $ block ^. aa . blockStmts
     modify $ over symbols $ M.mapMaybe $ \symbolInfo -> if symbolInfo ^. defInBlock == InBlock block
         then symbolInfo ^. prevDef
         else Just symbolInfo
@@ -91,8 +104,8 @@ checkBlock returnType block = do
         Empty -> return ()
         BStmt bl -> checkBlock returnType bl
         Decl t items -> forM_ items $ ignorePos $ \case
-            NoInit ident    -> putItemIntoState t ident stmt block
-            Init ident expr -> putItemIntoState t ident stmt block >> constrainExprType t expr
+            NoInit ident    -> putItemIntoState t ident stmt (InBlock block)
+            Init ident expr -> putItemIntoState t ident stmt (InBlock block) >> constrainExprType t expr
         Ass ident expr -> do
             t <- getIdentType ident
             constrainExprType t expr
@@ -183,24 +196,24 @@ funcApplication funType types = do
         then Just retType
         else Nothing
 
-putItemIntoState :: Type -> Ident -> AbsPos a -> Block -> CheckSt ()
-putItemIntoState t ident context block = do
+putItemIntoState :: Type -> Ident -> AbsPos a -> DefPlace -> CheckSt ()
+putItemIntoState t ident context defPlace = do
     mSymbolInfo <- use $ symbols . at ident
-    let mod = modify $ over symbols $ M.insert ident (SymbolInfo t ident (InBlock block) mSymbolInfo)
+    let mod = modify $ over symbols $ M.insert ident (SymbolInfo t ident defPlace mSymbolInfo)
     case mSymbolInfo of
         Nothing -> mod
-        Just symbolInfo -> if symbolInfo ^. defInBlock /= InBlock block
+        Just symbolInfo -> if symbolInfo ^. defInBlock /= defPlace
             then mod
             else let prevPos = (show . fromJust . view (defIdent . pos)) symbolInfo in contextError context
                 ("Identifier `" ++ absShow ident ++ "` is already declared (at " ++ prevPos ++ ")!")
                     >>= throwError
 
 -- error handling
-getProgramLine :: Int -> CheckSt String
+getProgramLine :: Int -> CheckSt CStr
 getProgramLine n = do
     program <- use wholeProgram
     let relLine = n - fst (begin $ fromJust $ program ^. pos)
-    return $ lines (show program) !! relLine
+    return $ fromJust (program ^. cStrRep) !! relLine
 
 identUnknown :: Ident -> CheckSt String
 identUnknown ident = contextError ident ("Identifier `" ++ absShow ident ++ "` is unknown!")
@@ -209,10 +222,12 @@ contextError :: AbsPos a -> String -> CheckSt String
 contextError element errorMsg = do
     let p@(Position b e) = fromJust (element ^. pos)
     line <- getProgramLine (fst b)
+    let start = snd b
+    let end = if fst e == fst b then snd e - 1 else csLength line - start + 1
     return $ unlines
         [ red ("Error in " ++ show p ++ ": ") ++ errorMsg
-        , line
-        , ([1 .. snd b - 1] >> " ") ++ red ([(snd b) .. snd e - 1] >> "^")
+        , csShow line
+        , ([1 .. start - 1] >> " ") ++ red ([start .. end] >> "^")
         ]
 
 red :: String -> String
