@@ -7,6 +7,7 @@ import Utils.Abstract
 import Utils.Position
 import Utils.Show
 import Utils.Verbose
+import Utils.Eval
 
 import System.Console.ANSI
 
@@ -48,7 +49,7 @@ data SymbolInfo = SymbolInfo
 instance Show SymbolInfo where
     show (SymbolInfo t i bl prev) = absShow i ++ " : " ++ absShow t ++ " (defined at " ++ show bl ++ ")" ++ case prev of
         Nothing -> "."
-        Just si -> "\n\tprev:\n" ++ indentStr (show si)
+        Just si -> "\n\t prev:\n" ++ indentStr (show si)
 
 makeLenses ''InfoSt
 makeLenses ''SymbolInfo
@@ -62,7 +63,16 @@ insertTopTypes = do
     mapM_ aux tds
 
 buildInfoSt :: Program -> InfoSt
-buildInfoSt = InfoSt M.empty
+buildInfoSt = InfoSt $ M.fromList
+    [ runtimeFun "printInt"     Void    [Int]
+    , runtimeFun "printString"  Void    [Str]
+    , runtimeFun "error"        Void    []
+    , runtimeFun "readInt"      Int     []
+    , runtimeFun "readString"   Str     []
+    ]
+  where
+    runtimeFun name retType argTypes = let ident = makeAbs (Ident name)
+        in (ident, SymbolInfo (makeAbs $ Fun (makeAbs retType) (map makeAbs argTypes)) ident Global Nothing)
 
 
 programValid :: Program -> CompilerOptsM (Either String ())
@@ -73,7 +83,10 @@ checkProgram :: CheckSt ()
 checkProgram = do
     insertTopTypes
     checkMain
-    use (wholeProgram . aa . programTopDefs) >>= mapM_ checkFunction
+    topDefs <- use $ wholeProgram . aa . programTopDefs
+    mapM_ checkFunction topDefs
+    mapM_ checkFunReturn topDefs
+
 
 checkMain :: CheckSt ()
 checkMain = use (symbols . at (makeAbs $ Ident "main")) >>= \case
@@ -82,19 +95,23 @@ checkMain = use (symbols . at (makeAbs $ Ident "main")) >>= \case
             unless (main ^. typ == expectedType) $ contextError (main ^. defIdent)
                 ("The `main` function has wrong signature: it should be of type " ++ absShow expectedType
                     ++ ", but it is of type " ++ absShow (main ^. typ))  >>= throwError
-        Nothing -> throwError "File doesn't contain the `main` function!"
+        Nothing -> throwError $ red "Error: " ++ "File doesn't contain the `main` function!"
+
+checkFunReturn :: TopDef -> CheckSt ()
+checkFunReturn topDef = unless (topDef ^. aa . topDefType == makeAbs Void) $ case hasReturn (simplifyTopDef topDef) of
+    Right () -> return ()
+    Left err -> throwError err
 
 checkFunction :: TopDef -> CheckSt ()
 checkFunction topDef = do
     let defPlace = InBlock $ topDef ^. aa . topDefBlock
     mapM_ (\arg -> putItemIntoState (arg ^. aa . argType) (arg ^. aa . argIdent) arg defPlace) (topDef ^. aa . topDefArgs)
-    let t = topDef ^. aa . topDefType
-    checkBlock t (topDef ^. aa . topDefBlock)
+    checkBlock (topDef ^. aa . topDefType) (topDef ^. aa . topDefBlock)
 
 checkBlock :: Type -> Block -> CheckSt ()
 checkBlock returnType block = do
     ss <- use symbols
-    lift $ lift $ verbosePrint $ "Checking block:\n" ++ show block ++ "it has defined:\n" ++ unlines (map show (M.elems ss))
+--     lift $ lift $ verbosePrint $ "Checking block:\n" ++ show block ++ "it has defined:\n" ++ unlines (map show (M.elems ss))
     mapM_ checkStmt $ block ^. aa . blockStmts
     modify $ over symbols $ M.mapMaybe $ \symbolInfo -> if symbolInfo ^. defInBlock == InBlock block
         then symbolInfo ^. prevDef
@@ -118,7 +135,8 @@ checkBlock returnType block = do
             unless (t == makeAbs Int) $ contextError stmt ("Decrement operator requires type " ++ show Int ++ ", but `"
                 ++ absShow ident ++ "` is of type " ++ absShow t) >>= throwError
         Ret expr -> constrainExprType returnType expr
-        VRet -> unless (returnType == makeAbs Void) $ throwError "Return void! TODO"
+        VRet -> unless (returnType == makeAbs Void) $ contextError stmt
+            ("Void return in function returning type " ++ absShow returnType ++ "!") >>= throwError
         Cond expr s -> do
             constrainExprType (makeAbs Bool) expr
             checkStmt s
@@ -134,8 +152,8 @@ checkBlock returnType block = do
 getExprType :: Expr -> CheckSt Type
 getExprType expr = case expr ^. aa of
     EVar ident -> getIdentType ident
-    ELitInt integer -> return intType
-    ELitBool bool -> return boolType
+    ELitInt integer -> return $ makeAbs Int
+    ELitBool bool -> return $ makeAbs Bool
     EApp ident exprs -> do
         types <- mapM getExprType exprs
         funcType <- getIdentType ident
@@ -146,33 +164,22 @@ getExprType expr = case expr ^. aa of
     EString string -> return (makeAbs Str)
     Neg e -> constrainExprType (makeAbs Int) e >> return (makeAbs Int)
     Not e -> constrainExprType (makeAbs Bool) e >> return (makeAbs Bool)
-    EMul e1 _ e2 -> intIntToInt e1 e2
+    EMul e1 _ e2 -> binOpType Int Int e1 e2
     EAdd e1 op e2 -> case op ^. aa of
-        Plus -> do
-            let strAlternative = let strType = makeAbs Str in do
-                    constrainExprType strType e1
-                    constrainExprType strType e2
-                    return strType
-            -- if typing `+` as int fails, try with string:
-            intIntToInt e1 e2 `catchError` const strAlternative
-        Minus -> intIntToInt e1 e2
-    ERel e1 _ e2 -> do
-        constrainExprType intType e1
-        constrainExprType intType e2
-        return boolType
-    EAnd e1 e2 -> boolBoolToBool e1 e2
-    EOr e1 e2 -> boolBoolToBool e1 e2
+        Plus  -> binOpType Int Int e1 e2 `catchError` \_ -> binOpType Str Str e1 e2
+        Minus -> binOpType Int Int e1 e2
+    ERel e1 op e2 -> case op ^. aa of
+        EQU -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2
+        NEQ -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2
+        _   -> binOpType Bool Int e1 e2
+    EAnd e1 e2 -> binOpType Bool Bool e1 e2
+    EOr e1 e2  -> binOpType Bool Bool e1 e2
   where
-    intType = makeAbs Int
-    boolType = makeAbs Bool
-    intIntToInt e1 e2 = do
-        constrainExprType intType e1
-        constrainExprType intType e2
-        return intType
-    boolBoolToBool e1 e2 = do
-        constrainExprType boolType e1
-        constrainExprType boolType e2
-        return boolType
+    binOpType :: AType -> AType -> Expr -> Expr -> CheckSt Type
+    binOpType retType argsType e1 e2 = do
+        constrainExprType (makeAbs argsType) e1
+        constrainExprType (makeAbs argsType) e2
+        return (makeAbs retType)
 
 
 getIdentType :: Ident -> CheckSt Type
@@ -229,6 +236,3 @@ contextError element errorMsg = do
         , csShow line
         , ([1 .. start - 1] >> " ") ++ red ([start .. end] >> "^")
         ]
-
-red :: String -> String
-red = colorize [SetColor Foreground Vivid Red]

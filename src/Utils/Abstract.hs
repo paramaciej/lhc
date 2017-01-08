@@ -4,12 +4,13 @@ module Utils.Abstract where
 
 import qualified AbsLatte as L
 import Utils.Position
-import Utils.Show
 
 import System.Console.ANSI
 import Control.Lens hiding (Empty)
 import Data.Maybe
 import Data.List
+import Utils.Show
+import Utils.Verbose
 
 data AbsPos a = AbsPos
     { _pos :: Maybe Position
@@ -51,7 +52,10 @@ instance Show AIdent where
 type Program = AbsPos AProgram
 data AProgram = Program
     { _programTopDefs :: [TopDef]
-    } deriving Show
+    }
+
+instance Show AProgram where
+    show (Program topDefs) = intercalate "\n" (map absShow topDefs)
 
 type TopDef = AbsPos ATopDef
 data ATopDef = FnDef
@@ -59,18 +63,28 @@ data ATopDef = FnDef
     , _topDefIdent :: Ident
     , _topDefArgs :: [Arg]
     , _topDefBlock ::Block
-    } deriving Show
+    }
+
+instance Show ATopDef where
+    show (FnDef t ident args block) = absShow t ++ " " ++ absShow ident ++ " ("
+        ++ intercalate "," (map absShow args) ++ ") " ++ absShow block
 
 type Arg = AbsPos AArg
 data AArg = Arg
     { _argType::Type
     , _argIdent :: Ident
-    } deriving Show
+    }
+
+instance Show AArg where
+    show (Arg t ident) = absShow t ++ " " ++ absShow ident
 
 type Block = AbsPos ABlock
 data ABlock = Block
     { _blockStmts :: [Stmt]
-    } deriving Show
+    } deriving Eq
+
+instance Show ABlock where
+    show (Block stmts) = "{\n" ++ indentStr (unlines $ map (absShow) stmts) ++ "}"
 
 sameBlock :: Block -> Block -> Bool
 b1 `sameBlock` b2 = b1 ^. pos == b2 ^. pos
@@ -78,7 +92,7 @@ b1 `sameBlock` b2 = b1 ^. pos == b2 ^. pos
 type Stmt = AbsPos AStmt
 data AStmt
     = Empty
-    | BStmt {_bStmtBlock ::Block}
+    | BStmt {_bStmtBlock :: Block}
     | Decl  {_declType ::Type, _declItems :: [Item]}
     | Ass   {_assIdent :: Ident, _assExpr :: Expr}
     | Incr  {_incrIdent :: Ident}
@@ -89,11 +103,29 @@ data AStmt
     | CondElse { _condElseExpr :: Expr, _condElseStmtTrue :: Stmt, _condElseStmtFalse :: Stmt }
     | While { _whileExpr :: Expr, _whileStmt :: Stmt }
     | SExp { _sExpExpr :: Expr }
-  deriving (Show)
+  deriving Eq
+
+instance Show AStmt where
+    show Empty = ";"
+    show (BStmt block) = absShow block
+    show (Decl t items) = absShow t ++ " " ++ intercalate ", " (map absShow items) ++ ";"
+    show (Ass ident expr) = absShow ident ++ " = " ++ absShow expr ++ ";"
+    show (Incr ident) = absShow ident ++ "++;"
+    show (Decr ident) = absShow ident ++ "--;"
+    show (Ret expr) = green "return " ++ absShow expr ++ ";"
+    show VRet = green "return" ++ ";"
+    show (Cond expr stmt) = green "if " ++ "(" ++ absShow expr ++ ") " ++ absShow stmt
+    show (CondElse expr sTrue sFalse) = green "if " ++ "(" ++ absShow expr ++ ") " ++ absShow sTrue ++ green " else " ++ absShow sFalse
+    show (While expr stmt) = green "while " ++ "(" ++ absShow expr ++ ") " ++ absShow stmt
+    show (SExp expr) = absShow expr ++ ";"
 
 type Item = AbsPos AItem
 data AItem = NoInit Ident | Init Ident Expr
-  deriving Show
+  deriving Eq
+
+instance Show AItem where
+    show (NoInit ident) = absShow ident
+    show (Init ident expr) = absShow ident ++ " = " ++ absShow expr
 
 type Type = AbsPos AType
 data AType
@@ -126,6 +158,7 @@ data AExpr
     | ERel Expr RelOp Expr
     | EAnd Expr Expr
     | EOr Expr Expr
+  deriving Eq
 
 instance Show AExpr where
     show (EVar ident) = absShow ident
@@ -143,6 +176,7 @@ instance Show AExpr where
 
 type MulOp = AbsPos AMulOp
 data AMulOp = Times | Div | Mod
+  deriving Eq
 
 instance Show AMulOp where
     show op = colorize [SetColor Foreground Vivid Yellow] $ case op of
@@ -152,6 +186,7 @@ instance Show AMulOp where
 
 type AddOp = AbsPos AAddOp
 data AAddOp = Plus | Minus
+  deriving Eq
 
 instance Show AAddOp where
     show op = colorize [SetColor Foreground Vivid Yellow] $ case op of
@@ -160,6 +195,7 @@ instance Show AAddOp where
 
 type RelOp = AbsPos ARelOp
 data ARelOp = LTH | LEQ | GTH | GEQ | EQU | NEQ
+  deriving Eq
 
 instance Show ARelOp where
     show op = colorize [SetColor Foreground Vivid Yellow] $ case op of

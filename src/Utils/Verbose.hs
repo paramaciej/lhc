@@ -19,4 +19,4 @@ runWithOptions :: String -> Bool -> CompilerOptsM () -> IO ()
 runWithOptions filename isVerbose compilerOptsM = runReaderT compilerOptsM (CompilerOpts filename isVerbose)
 
 indentStr :: String -> String
-indentStr = unlines . map ("\t" ++ ) . lines
+indentStr = unlines . map ("    " ++ ) . lines

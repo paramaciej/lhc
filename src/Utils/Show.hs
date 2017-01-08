@@ -6,6 +6,9 @@ module Utils.Show
     , cssShow
     , csLength
     , colorize
+    , red
+    , green
+    , yellow
     ) where
 
 import System.Console.ANSI
@@ -214,3 +217,13 @@ instance ColorShow RelOp where
     stShow (GE x)       = stShow x
     stShow (EQU x)      = stShow x
     stShow (NE x)       = stShow x
+
+
+red :: String -> String
+red = colorize [SetColor Foreground Vivid Red]
+
+green :: String -> String
+green = colorize [SetColor Foreground Vivid Green]
+
+yellow :: String -> String
+yellow = colorize [SetColor Foreground Vivid Yellow]

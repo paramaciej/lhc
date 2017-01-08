@@ -13,6 +13,8 @@ import Utils.ToAbstract
 import Utils.Types
 import Utils.Verbose
 
+import Utils.Eval
+
 import Data.Map
 import Data.Maybe
 import Control.Monad.State
@@ -31,7 +33,9 @@ main = getArgs >>= \case
                 liftIO $ putStrLn $ "OK " ++ fullShow program
 
                 programValid (toA program) >>= \case
-                    Right () -> liftIO $ putStrLn "ok!"
+                    Right () -> do
+                        liftIO $ putStrLn "ok!"
+                        liftIO $ putStrLn $ "simplified:\n" ++ show (simplifyProgram (toA program))
                     Left err -> liftIO $ putStrLn err
 
-            Bad err -> liftIO $ putStrLn $ "error:  " ++ show err
+            Bad err -> liftIO $ putStrLn $ red "Parser error: " ++ show err

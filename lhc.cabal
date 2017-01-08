@@ -22,6 +22,7 @@ executable latc
     ParLatte
 
     Utils.Abstract
+    Utils.Eval
     Utils.Position
     Utils.Show
     Utils.ToAbstract
