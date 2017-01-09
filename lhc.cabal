@@ -21,6 +21,7 @@ executable latc
     LexLatte
     ParLatte
 
+    Quattro
     Utils.Abstract
     Utils.Eval
     Utils.Position

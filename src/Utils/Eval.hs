@@ -47,13 +47,22 @@ simplifyStmt stmt = case stmt ^. aa of
 
 
 simplifyBlock :: Block -> Block
-simplifyBlock block = let newBlock = makeAbs $ Block $ mapMaybe aux (block ^. aa . blockStmts) in if newBlock == block
+simplifyBlock block = let newBlock = makeAbs $ Block $ cutAfterReturn (mapMaybe aux (block ^. aa . blockStmts)) in if newBlock == block
     then block
     else newBlock
   where
     aux stmt = let simplified = simplifyStmt stmt in if simplified ^. aa == Empty
         then Nothing
         else Just simplified
+
+cutAfterReturn :: [Stmt] -> [Stmt]
+cutAfterReturn stmts = reverse $ drop (aux stmts) $ reverse stmts
+  where
+    aux (x:xs) = case x ^. aa of
+        Ret _ -> length xs
+        VRet -> length xs
+        _ -> aux xs
+    aux [] = 0
 
 simplifyTopDef :: TopDef -> TopDef
 simplifyTopDef = over (aa . topDefBlock) simplifyBlock
