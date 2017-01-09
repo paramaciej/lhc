@@ -21,7 +21,9 @@ executable latc
     LexLatte
     ParLatte
 
-    Quattro
+    Quattro.Generator
+    Quattro.Types
+    Quattro.Validator
     Utils.Abstract
     Utils.Eval
     Utils.Position

@@ -87,7 +87,9 @@ instance Show ABlock where
     show (Block stmts) = "{\n" ++ indentStr (unlines $ map absShow stmts) ++ "}"
 
 sameBlock :: Block -> Block -> Bool
-b1 `sameBlock` b2 = b1 ^. pos == b2 ^. pos
+b1 `sameBlock` b2 = case (b1 ^. pos, b2 ^. pos) of
+    (Just p1, Just p2) -> p1 == p2
+    _ -> b1 == b2
 
 type Stmt = AbsPos AStmt
 data AStmt

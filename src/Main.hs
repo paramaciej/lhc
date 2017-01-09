@@ -14,7 +14,9 @@ import Utils.Types
 import Utils.Verbose
 
 import Utils.Eval
-import Quattro
+import Quattro.Generator
+import Quattro.Types
+import Quattro.Validator
 
 import Data.Map
 import Data.Maybe
@@ -39,9 +41,9 @@ main = getArgs >>= \case
                         let simple = simplifyProgram (toA program)
                         liftIO $ putStrLn $ "simplified:\n" ++ show simple
 
-                        let initialSt = QuattroSt empty 0 (QuattroCode empty) 1 1
-                        endSt <- execStateT (genProgram simple) initialSt
-                        liftIO $ putStrLn $ "\n\nQUATTRO\n" ++ show endSt
+                        runExceptT (generateValidatedQuattro simple) >>= \case
+                            Right x -> liftIO $ print x
+                            Left err -> liftIO $ putStrLn err
                     Left err -> liftIO $ putStrLn err
 
             Bad err -> liftIO $ putStrLn $ red "Parser error: " ++ show err
