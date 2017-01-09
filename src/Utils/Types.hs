@@ -137,16 +137,16 @@ checkBlock returnType block = do
         Ret expr -> constrainExprType returnType expr
         VRet -> unless (returnType == makeAbs Void) $ contextError stmt
             ("Void return in function returning type " ++ absShow returnType ++ "!") >>= throwError
-        Cond expr s -> do
+        Cond expr b -> do
             constrainExprType (makeAbs Bool) expr
-            checkStmt s
-        CondElse expr s1 s2 -> do
+            checkBlock returnType b
+        CondElse expr b1 b2 -> do
             constrainExprType (makeAbs Bool) expr
-            checkStmt s1
-            checkStmt s2
-        While expr s -> do
+            checkBlock returnType b1
+            checkBlock returnType b2
+        While expr b -> do
             constrainExprType (makeAbs Bool) expr
-            checkStmt s
+            checkBlock returnType b
         SExp expr -> void $ getExprType expr
 
 getExprType :: Expr -> CheckSt Type

@@ -33,12 +33,12 @@ simplifyStmt stmt = case stmt ^. aa of
         then makeAbs Empty
         else makeAbs $ BStmt simplified
     Cond expr sTrue
-        | obviousTrue expr  -> sTrue
+        | obviousTrue expr  -> makeAbs $ BStmt sTrue
         | obviousFalse expr -> makeAbs Empty
         | otherwise         -> stmt
     CondElse expr sTrue sFalse
-        | obviousTrue expr  -> sTrue
-        | obviousFalse expr -> sFalse
+        | obviousTrue expr  -> makeAbs $ BStmt sTrue
+        | obviousFalse expr -> makeAbs $ BStmt sFalse
         | otherwise         -> stmt
     While expr _
         | obviousFalse expr -> makeAbs Empty
@@ -82,6 +82,6 @@ constrainReturn fun block = aux (block ^. aa . blockStmts)
         Ret _ -> return ()
         VRet -> return ()
         BStmt block -> constrainReturn fun block `catchError` (\_ -> aux xs)
-        CondElse _ sTrue sFalse -> (aux [sTrue] >> aux [sFalse]) `catchError` const (aux xs)
+        CondElse _ bTrue bFalse -> (constrainReturn fun bTrue >> constrainReturn fun bFalse) `catchError` const (aux xs)
         _ -> aux xs
     aux [] = throwError $ red ("Error in function " ++ absShow (fun ^. aa . topDefIdent) ++ " (" ++ fromJust (show <$> fun ^. pos) ++ "):") ++ " no return statement!"

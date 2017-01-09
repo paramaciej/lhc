@@ -119,7 +119,7 @@ genStmt block = A.ignorePos $ \case
         temp <- genExpr expr
         emitExpr $ Ret temp
     A.VRet -> emitExpr VRet
-    A.Cond expr stmt -> do
+    A.Cond expr ifTrue -> do
         trueBlock <- freshBlock
         condBlock <- freshBlock
         nextBlock <- freshBlock
@@ -130,12 +130,12 @@ genStmt block = A.ignorePos $ \case
         jumpingCond trueBlock nextBlock expr
 
         setActiveBlock trueBlock
-        genStmt block stmt
+        genBlock ifTrue
         emitExpr $ Goto nextBlock
 
         setActiveBlock nextBlock
 
-    A.CondElse expr sTrue sFalse -> do
+    A.CondElse expr ifTrue ifFalse -> do
         condBlock <- freshBlock
         trueBlock <- freshBlock
         falseBlock <- freshBlock
@@ -147,14 +147,14 @@ genStmt block = A.ignorePos $ \case
         jumpingCond trueBlock falseBlock expr
 
         setActiveBlock trueBlock
-        genStmt block sTrue
+        genBlock ifTrue
         emitExpr $ Goto nextBlock
 
         setActiveBlock falseBlock
-        genStmt block sFalse
+        genBlock ifFalse
         emitExpr $ Goto nextBlock
 
-    A.While expr stmt -> do
+    A.While expr whileBlock -> do
         bodyBlock <- freshBlock
         condBlock <- freshBlock
         nextBlock <- freshBlock
@@ -165,7 +165,7 @@ genStmt block = A.ignorePos $ \case
         jumpingCond bodyBlock nextBlock expr
 
         setActiveBlock bodyBlock
-        genStmt block stmt
+        genBlock whileBlock
         emitExpr $ Goto condBlock
 
         setActiveBlock nextBlock

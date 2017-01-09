@@ -84,7 +84,7 @@ data ABlock = Block
     } deriving Eq
 
 instance Show ABlock where
-    show (Block stmts) = "{\n" ++ indentStr (unlines $ map (absShow) stmts) ++ "}"
+    show (Block stmts) = "{\n" ++ indentStr (unlines $ map absShow stmts) ++ "}"
 
 sameBlock :: Block -> Block -> Bool
 b1 `sameBlock` b2 = b1 ^. pos == b2 ^. pos
@@ -99,9 +99,9 @@ data AStmt
     | Decr  {_decrIdent :: Ident}
     | Ret   {_retExpr :: Expr}
     | VRet
-    | Cond { _condExpr :: Expr, _condStmt :: Stmt }
-    | CondElse { _condElseExpr :: Expr, _condElseStmtTrue :: Stmt, _condElseStmtFalse :: Stmt }
-    | While { _whileExpr :: Expr, _whileStmt :: Stmt }
+    | Cond { _condExpr :: Expr, _condBl :: Block }
+    | CondElse { _condElseExpr :: Expr, _condElseBlTrue :: Block, _condElseBlFalse :: Block }
+    | While { _whileExpr :: Expr, _whileBl :: Block }
     | SExp { _sExpExpr :: Expr }
   deriving Eq
 

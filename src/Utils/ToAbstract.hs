@@ -33,9 +33,20 @@ instance ToAbstract L.Stmt AStmt where
     _to (L.Decr i _ _) = Decr (toA i)
     _to (L.Ret _ e _) = Ret (toA e)
     _to (L.VRet _ _) = VRet
-    _to (L.Cond _ _ e _ s) = Cond (toA e) (toA s)
-    _to (L.CondElse _ _ e _ s1 _ s2) = CondElse (toA e) (toA s1) (toA s2)
-    _to (L.While _ _ e _ s) = While (toA e) (toA s)
+    _to (L.Cond _ _ e _ s) = Cond (toA e) $ case s of
+        L.BStmt block -> toA block
+        _ -> makeAbs (Block [toA s])
+    _to (L.CondElse _ _ e _ s1 _ s2) =
+        let b1 = case s1 of
+                L.BStmt block -> toA block
+                _ -> makeAbs (Block [toA s1])
+            b2 = case s2 of
+                L.BStmt block -> toA block
+                _ -> makeAbs (Block [toA s2])
+        in CondElse (toA e) b1 b2
+    _to (L.While _ _ e _ s) = While (toA e) $ case s of
+        L.BStmt block -> toA block
+        _ -> makeAbs (Block [toA s])
     _to (L.SExp e _) = SExp (toA e)
 
 instance ToAbstract L.Item AItem where
