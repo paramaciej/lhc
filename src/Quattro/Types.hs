@@ -48,7 +48,8 @@ data QBlock = QBlock
     } deriving Show
 
 data QCode = QCode
-    { _codeBlocks :: M.Map Label QBlock
+    { _entryCodeBlock :: Label
+    , _codeBlocks :: M.Map Label QBlock
     } deriving Show
 
 data LocalInfo = LocalInfo
@@ -69,7 +70,7 @@ data QuattroSt = QuattroSt
 type GenM = StateT QuattroSt CompilerOptsM
 
 -- clean types
-data ProgramCode = ProgramCode
+newtype ProgramCode = ProgramCode
     { _functions :: M.Map String FunctionCode}
 
 data FunctionCode = FunctionCode
@@ -107,7 +108,7 @@ instance Show Stmt where
     show (CmpStmt a op v1 v2)   = show a ++ yellow " <- " ++ show v1 ++ " " ++ yellow (show op) ++ " " ++ show v2
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1
     show (Param val)            = yellow "param " ++ show val
-    show (Call a str)           = show a ++ yellow " <- " ++ str
+    show (Call a str)           = show a ++ yellow " <- call " ++ str
     show (StringLit a str)      = show a ++ yellow " <- " ++ red str
 
 

@@ -2,15 +2,16 @@
 module Quattro.Generator where
 
 import Data.List
+import qualified Data.Map as M
+import Data.Maybe
 import Utils.Verbose
 import Utils.Types
 import Utils.Show
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Lens
-import qualified Utils.Abstract as A
 
-import qualified Data.Map as M
+import qualified Utils.Abstract as A
 import Quattro.Types
 
 genProgram :: A.Program -> GenM ()
@@ -28,9 +29,11 @@ genTopDef topDef = do
 
 codeForFun :: A.Ident -> GenM ()
 codeForFun ident = do
-    funCode . at ident .= Just (QCode M.empty)
+    funCode . at ident .= Just (QCode 0 M.empty)
     currentFun .= Just ident
-    freshBlock >>= setActiveBlock
+    startBlock <- freshBlock
+    funCode . at ident . singular _Just . entryCodeBlock .= startBlock
+    setActiveBlock startBlock
 
 genBlock :: A.Block -> GenM ()
 genBlock block = do
@@ -180,7 +183,7 @@ emitExpr stmt = do
 emitExprIn :: Label -> Stmt -> GenM ()
 emitExprIn label stmt = do
     fun <- getCurrentFun
-    funCode . at fun . singular _Just . codeBlocks . at label . _Just  %= aux
+    qStmtGetter fun label %= aux
   where
     aux :: QBlock -> QBlock
     aux qBlock = case qBlock ^. out of
@@ -218,8 +221,10 @@ setLocal ident val = do
     case val of
         Location addr -> locals . at ident . _Just . address . at bl .= Just addr
         Literal _ -> do
-            addr <- getLocal ident
-            genMov addr val
+            -- we don't use getLocal, because previous value of variable doesn't interest us here
+            newAddr <-freshLoc
+            locals . at ident . _Just . address . at bl .= Just newAddr
+            genMov newAddr val
 
 getLocal :: A.Ident -> GenM Address
 getLocal ident = do
@@ -231,7 +236,7 @@ getLocalFrom label ident = use (locals . at ident) >>= \case
     Just info -> case info ^. address . at label of
         Just addr -> return addr
         Nothing -> genPhi label ident
-    Nothing -> error $ "LOCAL " ++ show ident ++ " UNKNOWN"
+    Nothing -> error $ "LOCAL " ++ show ident ++ " UNKNOWN IN BLOCK " ++ show label
 
 genPhi :: Label -> A.Ident -> GenM Address
 genPhi bl ident = do
@@ -239,8 +244,8 @@ genPhi bl ident = do
     newAddr <- freshLoc
     locals . at ident . _Just . address . at bl .= Just newAddr
 
-    phiList <- use (funCode . at fun . _Just . codeBlocks . at bl . _Just . entry) >>= mapM getAddr
-    funCode . at fun . _Just . codeBlocks . at bl . _Just . phiQ . at newAddr .= Just (ident, M.fromList phiList)
+    phiList <- use (qStmtGetter fun bl . entry) >>= mapM getAddr
+    qStmtGetter fun bl . phiQ . at newAddr .= Just (ident, M.fromList phiList)
     return newAddr
   where
     getAddr label = do
@@ -254,22 +259,23 @@ quitBlock :: OutStmt -> GenM ()
 quitBlock oStmt = do
     fun <- getCurrentFun
     label <- use currentBlock
-    funCode . at fun . singular _Just . codeBlocks . at label . singular _Just . out .= Just oStmt
-    case oStmt of
-        Goto destination -> appendEntryPoint label destination
-        Branch dest1 dest2 _ -> appendEntryPoint label dest1 >> appendEntryPoint label dest2
-        _ -> return ()
+    use (qStmtGetter fun label . out) >>= \case
+        Nothing -> do
+            qStmtGetter fun label . out .= Just oStmt
+            case oStmt of
+                Goto destination -> appendEntryPoint label destination
+                Branch dest1 dest2 _ -> appendEntryPoint label dest1 >> appendEntryPoint label dest2
+                _ -> return ()
+        Just currentOut -> qStmtGetter fun label . out .= Just currentOut -- we leave previous escape statetment
 
 appendEntryPoint :: Label -> Label -> GenM ()
 appendEntryPoint source destination = do
     fun <- getCurrentFun
-    funCode . at fun . _Just . codeBlocks . at destination . _Just . entry %= cons source
+    qStmtGetter fun destination . entry %= cons source
 
-
-    phis <- use $ funCode . at fun . _Just . codeBlocks . at destination . _Just . phiQ
+    phis <- use $ qStmtGetter fun destination . phiQ
     newPhis <- mapM aux phis
-    funCode . at fun . _Just . codeBlocks . at destination . _Just . phiQ .= newPhis
-
+    qStmtGetter fun destination . phiQ .= newPhis
   where
     aux (ident, mp) = do
         addr <- getLocalFrom source ident
@@ -286,5 +292,8 @@ performOnBlock label ops = do
 
 getUniqueIdent :: GenM A.Ident
 getUniqueIdent = do
-    newName <- (unwords . map (^. A.aa . A.identString) . M.keys) <$> use locals
+    newName <- (("TEMP_" ++) . unwords . map (^. A.aa . A.identString) . M.keys) <$> use locals
     return $ A.makeAbs (A.Ident newName)
+
+
+qStmtGetter fun label = funCode . at fun . singular _Just . codeBlocks . at label . singular _Just

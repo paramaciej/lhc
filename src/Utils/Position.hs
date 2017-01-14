@@ -134,7 +134,7 @@ instance Positioned Type where
     position (Str x)    = position x
     position (Bool x)   = position x
     position (Void x)   = position x
-    position (Fun _ _ _ _)  = error "impossible happened" -- TODO
+    position Fun {}     = error "impossible happened"
 
 instance Positioned Expr where
     position (EVar i)           = position i

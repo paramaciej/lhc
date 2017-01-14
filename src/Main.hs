@@ -18,32 +18,43 @@ import Quattro.Generator
 import Quattro.Types
 import Quattro.Validator
 
+import Control.Lens
+import Control.Monad.Except
+import Control.Monad.Reader
+import Control.Monad.State
 import Data.Map
 import Data.Maybe
-import Control.Monad.State
-import Control.Monad.Except
 import System.Environment
 
-import Control.Lens
 
 
 main :: IO ()
 main = getArgs >>= \case
-    [filename] -> do
-        fileContent <- readFile filename
-        runWithOptions filename True $ case pProgram (myLexer fileContent) of
+    ["-v", filename] -> runWithOptions filename True runCompiler
+    [filename] -> runWithOptions filename False runCompiler
+    _ -> usage
+  where
+    runCompiler :: CompilerOptsM ()
+    runCompiler = do
+        fileContent <- asks sourceFilename >>= lift . readFile
+        case pProgram (myLexer fileContent) of
             Ok program -> do
-                liftIO $ putStrLn $ "OK " ++ fullShow program
+                verbosePrint $ "Parsed source:\n" ++ fullShow program
 
                 programValid (toA program) >>= \case
                     Right () -> do
-                        liftIO $ putStrLn "ok!"
+                        liftIO $ putStrLn $ green "Program validated."
                         let simple = simplifyProgram (toA program)
-                        liftIO $ putStrLn $ "simplified:\n" ++ show simple
+                        verbosePrint $ "Simplified:\n" ++ show simple
 
                         runExceptT (generateValidatedQuattro simple) >>= \case
-                            Right x -> liftIO $ print x
+                            Right x -> verbosePrint $ show x
                             Left err -> liftIO $ putStrLn err
                     Left err -> liftIO $ putStrLn err
 
             Bad err -> liftIO $ putStrLn $ red "Parser error: " ++ show err
+    usage = do
+        putStrLn $ green "The Large Hadron Collider (or Latte (written in Haskell) Compiler)"
+        progName <- getProgName
+        putStrLn $ "usage: ./" ++ progName ++ " [-v] filename"
+        putStrLn "\n '-v' option turns on more verbose output"

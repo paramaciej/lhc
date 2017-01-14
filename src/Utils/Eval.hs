@@ -7,6 +7,7 @@ import Utils.Show
 
 import Control.Lens hiding (Empty)
 import Control.Monad.Except
+import Data.Either
 import Data.Maybe
 
 
@@ -65,7 +66,10 @@ cutAfterReturn stmts = reverse $ drop (aux stmts) $ reverse stmts
     aux [] = 0
 
 simplifyTopDef :: TopDef -> TopDef
-simplifyTopDef = over (aa . topDefBlock) simplifyBlock
+simplifyTopDef td = let simplified = over (aa . topDefBlock) simplifyBlock td
+    in if simplified ^. aa. topDefType == makeAbs Void && isLeft (hasReturn simplified)
+        then simplified & aa . topDefBlock . aa . blockStmts %~ (++ [makeAbs VRet])
+        else simplified
 
 simplifyProgram :: Program -> Program
 simplifyProgram = forgetPos . over (aa . programTopDefs . traverse) simplifyTopDef

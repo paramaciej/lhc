@@ -183,7 +183,7 @@ instance ColorShow Type where
     stShow (Str x)      = stShow x
     stShow (Bool x)     = stShow x
     stShow (Void x)     = stShow x
-    stShow (Fun _ _ _ _)    = error "impossible happened"
+    stShow Fun {}       = error "impossible happened"
 
 instance ColorShow Expr where
     stShow (EVar i)                 = stShow i

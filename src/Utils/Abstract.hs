@@ -42,7 +42,7 @@ ignorePos f x = f (x ^. aa)
 
 
 type Ident = AbsPos AIdent
-data AIdent = Ident
+newtype AIdent = Ident
     { _identString :: String
     } deriving (Eq, Ord)
 
@@ -50,7 +50,7 @@ instance Show AIdent where
     show = _identString
 
 type Program = AbsPos AProgram
-data AProgram = Program
+newtype AProgram = Program
     { _programTopDefs :: [TopDef]
     }
 
@@ -59,10 +59,10 @@ instance Show AProgram where
 
 type TopDef = AbsPos ATopDef
 data ATopDef = FnDef
-    { _topDefType :: Type
-    , _topDefIdent :: Ident
-    , _topDefArgs :: [Arg]
-    , _topDefBlock ::Block
+    { _topDefType   :: Type
+    , _topDefIdent  :: Ident
+    , _topDefArgs   :: [Arg]
+    , _topDefBlock  :: Block
     }
 
 instance Show ATopDef where
@@ -79,7 +79,7 @@ instance Show AArg where
     show (Arg t ident) = absShow t ++ " " ++ absShow ident
 
 type Block = AbsPos ABlock
-data ABlock = Block
+newtype ABlock = Block
     { _blockStmts :: [Stmt]
     } deriving Eq
 
@@ -206,7 +206,7 @@ instance Show ARelOp where
         GTH -> ">"
         GEQ -> ">="
         EQU -> "=="
-        NEQ -> "="
+        NEQ -> "!="
 
 
 makeLenses ''AIdent

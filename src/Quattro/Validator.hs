@@ -27,13 +27,24 @@ validateQuattro state = do
     return $ ProgramCode $ M.fromList forFun
   where
     genFun (ident, qCode) = do
-        let (start, _) = M.partition (\block -> null (block ^. entry)) (qCode ^. codeBlocks)
-        unless (length start == 1) $ throwValErr $ "function " ++ show ident ++ " hasn't got entry block"
+        let cleanedCode = cutUnreachableBlocks qCode
+        validateEscapes cleanedCode
+        validatePhis cleanedCode
 
-        validateEscapes qCode
-        validatePhis qCode
+        return
+            ( ident ^. A.aa . A.identString
+            , FunctionCode (cleanedCode ^. entryCodeBlock) (M.map qBlockToBlock (cleanedCode ^. codeBlocks))
+            )
 
-        return (ident ^. A.aa . A.identString, FunctionCode (head $ M.keys start) (M.map qBlockToBlock (qCode ^. codeBlocks)))
+cutUnreachableBlocks :: QCode -> QCode
+cutUnreachableBlocks qCode = if null unreachable
+    then modifiedCode
+    else cutUnreachableBlocks modifiedCode
+  where
+    partitionFunction key block = key /= (qCode ^. entryCodeBlock) && null (block ^. entry)
+    (unreachableMap, rest) = M.partitionWithKey partitionFunction (qCode ^. codeBlocks)
+    unreachable = M.keys unreachableMap
+    modifiedCode = qCode & codeBlocks .~ M.map (entry %~ (\\ unreachable)) rest
 
 qBlockToBlock :: QBlock -> Block
 qBlockToBlock (QBlock _ phis stmts (Just out)) = Block (M.map snd phis) (reverse stmts) out
