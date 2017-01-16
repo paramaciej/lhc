@@ -127,3 +127,7 @@ makeLenses ''QBlock
 makeLenses ''QCode
 makeLenses ''LocalInfo
 makeLenses ''QuattroSt
+
+makeLenses ''ProgramCode
+makeLenses ''FunctionCode
+makeLenses ''Block

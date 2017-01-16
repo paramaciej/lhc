@@ -18,6 +18,8 @@ import Quattro.Generator
 import Quattro.Types
 import Quattro.Validator
 
+import Asm.Generator
+
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -48,7 +50,9 @@ main = getArgs >>= \case
                         verbosePrint $ "Simplified:\n" ++ show simple
 
                         runExceptT (generateValidatedQuattro simple) >>= \case
-                            Right x -> verbosePrint $ show x
+                            Right x -> do
+                                verbosePrint $ show x
+                                liftIO $ putStrLn $ green "ASM:\n" ++ programAsm x
                             Left err -> liftIO $ putStrLn err
                     Left err -> liftIO $ putStrLn err
 
