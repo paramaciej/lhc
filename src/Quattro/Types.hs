@@ -83,16 +83,17 @@ data Block = Block
     , _escape :: OutStmt
     }
 
+-- types without phi
+data ClearBlock = ClearBlock [Stmt] OutStmt
+data ClearFunction = ClearFunction Label (M.Map Label ClearBlock)
+newtype ClearProgram = ClearProgram (M.Map String ClearFunction)
+
 
 instance Show ProgramCode where
-    show (ProgramCode functions) = unlines $ map showFunc (M.toAscList functions)
-      where
-        showFunc (name, funCode) = green "function " ++ name ++ "\n" ++ show funCode
+    show (ProgramCode functions) = showAbsProgCode functions
 
 instance Show FunctionCode where
-    show (FunctionCode entry blocks) = "( starts in LABEL " ++ show entry ++ ")\n\n" ++ unlines (map showBlock (M.toAscList blocks))
-      where
-        showBlock (label, block) = yellow ("LABEL " ++ show label) ++ "\n" ++ indentStr (show block)
+    show (FunctionCode entry blocks) = showAbsFunCode entry blocks
 
 instance Show Block where
     show (Block phi stmts escape) = showPhi phi ++ unlines (map show stmts)
@@ -101,6 +102,28 @@ instance Show Block where
         showPhi = unlines . map
             (\(k, v) -> show k ++ yellow " <- " ++ "φ (" ++ intercalate ", "
                 (map (\(l,a) -> show l ++ ": " ++ show a)$ M.toAscList v) ++ ")") . M.toAscList
+
+
+instance Show ClearBlock where
+    show (ClearBlock stmts out) = unlines (map show stmts) ++ show out
+
+instance Show ClearFunction where
+    show (ClearFunction entry blocks) = showAbsFunCode entry blocks
+
+instance Show ClearProgram where
+    show (ClearProgram functions) = showAbsProgCode functions
+
+showAbsProgCode :: Show a => M.Map String a -> String
+showAbsProgCode functions = unlines $ map showFunc (M.toAscList functions)
+  where
+    showFunc (name, funCode) = green "function " ++ name ++ "\n" ++ show funCode
+
+showAbsFunCode :: Show a => Label -> M.Map Label a -> String
+showAbsFunCode entry blocks = "( starts in LABEL " ++ show entry ++ " )\n\n" ++ unlines (map showBlock (M.toAscList blocks))
+  where
+    showBlock (label, block) = yellow ("LABEL " ++ show label) ++ "\n" ++ indentStr (show block)
+
+
 
 instance Show Stmt where
     show (Mov a v)              = show a ++ yellow " <- " ++ show v

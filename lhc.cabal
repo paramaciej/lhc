@@ -21,6 +21,8 @@ executable latc
     LexLatte
     ParLatte
 
+    Asm.Generator
+    Quattro.Alive
     Quattro.Generator
     Quattro.Types
     Quattro.Validator

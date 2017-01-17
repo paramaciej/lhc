@@ -14,6 +14,7 @@ import Utils.Types
 import Utils.Verbose
 
 import Utils.Eval
+import Quattro.Alive
 import Quattro.Generator
 import Quattro.Types
 import Quattro.Validator
@@ -53,6 +54,9 @@ main = getArgs >>= \case
                             Right x -> do
                                 verbosePrint $ show x
                                 liftIO $ putStrLn $ green "ASM:\n" ++ programAsm x
+
+                                liftIO $ putStrLn $ green "CLEAR:\n" ++ show (clearProgram x)
+                                liftIO $ putStrLn $ green "ALIVE IN:\n" ++ show (calculateInSets $ clearProgram x)
                             Left err -> liftIO $ putStrLn err
                     Left err -> liftIO $ putStrLn err
 
