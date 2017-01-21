@@ -25,7 +25,7 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.Map
+import qualified Data.Map as M
 import Data.Maybe
 import System.Environment
 
@@ -53,10 +53,15 @@ main = getArgs >>= \case
                         runExceptT (generateValidatedQuattro simple) >>= \case
                             Right x -> do
                                 verbosePrint $ show x
-                                liftIO $ putStrLn $ green "ASM:\n" ++ programAsm x
+                                let clear@(ClearProgram functions) = clearProgram x
+                                let inSets = M.unions $ map calculateInSets $ M.elems functions
 
-                                liftIO $ putStrLn $ green "CLEAR:\n" ++ show (clearProgram x)
-                                liftIO $ putStrLn $ green "ALIVE IN:\n" ++ show (calculateInSets $ clearProgram x)
+                                verbosePrint $ green "Cleared φ :\n" ++ show clear
+                                verbosePrint $ green "Alive sets:\n" ++ unlines (map (\(label, set) -> yellow (show label) ++ ": " ++ show set) $ M.toList inSets)
+
+                                asm <- genAsm clear
+                                liftIO $ putStrLn $ green "ASM\n" ++ unlines (map show asm)
+
                             Left err -> liftIO $ putStrLn err
                     Left err -> liftIO $ putStrLn err
 

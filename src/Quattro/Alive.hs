@@ -9,8 +9,6 @@ import qualified Data.Set as S
 
 import Quattro.Types
 
-type AliveSet = S.Set Address
-
 
 clearProgram :: ProgramCode -> ClearProgram
 clearProgram program =
@@ -76,12 +74,9 @@ clearFunction fCode = do
 
 -- calculate IN alive sets
 
-calculateInSets :: ClearProgram -> M.Map Label AliveSet
-calculateInSets (ClearProgram funMap) = findFixPoint
+calculateInSets :: ClearFunction -> M.Map Label AliveSet
+calculateInSets (ClearFunction _ blockMap) = findFixPoint
   where
-    blockMap :: M.Map Label ClearBlock
-    blockMap = M.unions $ map (\(ClearFunction _ mp) -> mp) $ M.elems funMap
-
     initial :: M.Map Label AliveSet
     initial = M.map (const S.empty) blockMap
 

@@ -5,6 +5,7 @@ import Control.Lens
 import Control.Monad.State
 import Data.List
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 import qualified Utils.Abstract as A
 import Utils.Show
@@ -88,6 +89,8 @@ data ClearBlock = ClearBlock [Stmt] OutStmt
 data ClearFunction = ClearFunction Label (M.Map Label ClearBlock)
 newtype ClearProgram = ClearProgram (M.Map String ClearFunction)
 
+
+type AliveSet = S.Set Address
 
 instance Show ProgramCode where
     show (ProgramCode functions) = showAbsProgCode functions
