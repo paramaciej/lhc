@@ -26,11 +26,14 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = -- TODO dobra kolejn
 
 genBlock :: Q.ClearFunction -> (String, (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
 genBlock fun (label, (block@(Q.ClearBlock stmts out), thisInSet)) = do
-    allocSt <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
-    return $ Label label : allocSt ^. asmStmts -- TODO chyba już nie
+    fromStmts <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
+    fromOut <- execStateT (genAndAllocEscape newOut) (initialAllocSt outSet)
+    return $ Label label : fromStmts ^. asmStmts ++ fromOut ^. asmStmts
   where
     inSets = calculateInSets fun
+    outSet = setFromOut inSets out
     withAlive = stmtsWithAlive inSets fun block
+    newOut = outWithAlive inSets out
 
 
 genAndAllocBlock :: [StmtWithAlive] -> AllocM ()
@@ -41,6 +44,24 @@ genAndAllocBlock (head:tail) = case head ^. stmt of
             Nothing -> movValToAddrLocatedIn val addr S.empty -- TODO chyba ok, sprawdzić czt to działa
     _ -> return () -- TODO TODO TODO !!!
 genAndAllocBlock [] = return () -- TODO TODO TODO
+
+genAndAllocEscape :: Out -> AllocM ()
+genAndAllocEscape (Goto next) = do
+    fixStack (next ^. afterLabel)
+    asmStmts %= (++ [Jmp (show $ next ^. aliveLabel)])
+genAndAllocEscape (Branch nextTrue nextFalse val) = do
+    let tmpLabel = show (nextFalse ^. aliveLabel) ++ "_fix"
+    cmpArg <- fastestReadVal val
+    asmStmts %= (++ [Cmp cmpArg (Literal 0), Jz tmpLabel])
+    fixStack (nextTrue ^. afterLabel)
+    asmStmts %= (++ [Jmp (show $ nextTrue ^. aliveLabel), Label tmpLabel])
+    fixStack (nextFalse ^. afterLabel)
+    asmStmts %= (++ [Jmp (show $ nextFalse ^. aliveLabel)])
+genAndAllocEscape (Ret val) = do
+    source <- fastestReadVal val
+    let rax = Location $ RegisterLoc $ valueMatchRegister RAX val
+    asmStmts %= (++ [Mov source rax, LeaveRet])
+genAndAllocEscape VRet = asmStmts %= (++ [LeaveRet])
 
 movValToAddrLocatedIn :: Q.Value -> Q.Address -> S.Set RealLoc -> AllocM ()
 movValToAddrLocatedIn val addr realLocs = do
@@ -94,7 +115,9 @@ getFreeStack = do
         else S.findMin $ S.fromList [0..(S.findMax stackLocks + 1)] S.\\ stackLocks
 
 
-
+valueMatchRegister :: Reg -> Q.Value -> Register
+valueMatchRegister reg (Q.Literal _) = Register Int reg
+valueMatchRegister reg (Q.Location addr) = addressMatchRegister reg addr
 
 addressMatchRegister :: Reg -> Q.Address -> Register
 addressMatchRegister reg addr = Register Int reg -- TODO WIELKOSC DANYCH!
@@ -111,3 +134,13 @@ setRegisterToAddr destReg addr = do
     mapM_ (\r -> registers . at r .= Just Nothing) (fromMaybe [] previous)
     stack . at addr .= Just (S.singleton (RegisterLoc $ addressMatchRegister destReg addr))
     registers . at destReg .= Just (Just addr)
+
+fixStack :: Q.AliveSet -> AllocM ()
+fixStack alive = do
+    perms <- fixStmts alive
+    mapM_ fix perms
+  where
+    fix :: StackFixStmt -> AllocM ()
+    fix (addr, from, to) = do
+        let rax = Location $ RegisterLoc $ addressMatchRegister RAX addr
+        asmStmts %= (++ [Mov (Location (Stack from)) rax, Mov rax (Location (Stack to))])
