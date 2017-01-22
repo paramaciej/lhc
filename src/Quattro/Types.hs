@@ -14,7 +14,7 @@ import Utils.Verbose
 
 
 data BinOp = Add | Sub | Mul | Div | Mod | Or | And
-  deriving Show
+  deriving (Show, Eq)
 
 data UniOp = Neg | Not
   deriving Show
@@ -26,13 +26,12 @@ data Stmt
     | BinStmt Address BinOp Value Value
     | CmpStmt Address RelOp Value Value
     | UniStmt Address UniOp Value
-    | Param Value
-    | Call Address String
+    | Call Address String [Value]
     | StringLit Address String
 
 data OutStmt
     = Goto Label
-    | Branch Label Label Value
+    | Branch Label Label Label Value
     | Ret Value
     | VRet
 
@@ -133,16 +132,15 @@ instance Show Stmt where
     show (BinStmt a op v1 v2)   = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1 ++ " " ++ show v2
     show (CmpStmt a op v1 v2)   = show a ++ yellow " <- " ++ show v1 ++ " " ++ yellow (show op) ++ " " ++ show v2
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1
-    show (Param val)            = yellow "param " ++ show val
-    show (Call a str)           = show a ++ yellow " <- call " ++ str
+    show (Call a str vs)        = show a ++ yellow " <- call " ++ str ++ " (" ++ intercalate ", " (map show vs) ++ ")"
     show (StringLit a str)      = show a ++ yellow " <- " ++ red str
 
 
 instance Show OutStmt where
-    show (Goto label)       = green "goto " ++ show label
-    show (Branch l1 l2 val) = green "if " ++ show val ++ green " then goto " ++ show l1 ++ green " else " ++ show l2
-    show (Ret val)          = green "ret " ++ show val
-    show VRet               = green "ret"
+    show (Goto label)         = green "goto " ++ show label
+    show (Branch _ l1 l2 val) = green "if " ++ show val ++ green " then goto " ++ show l1 ++ green " else " ++ show l2
+    show (Ret val)            = green "ret " ++ show val
+    show VRet                 = green "ret"
 
 instance Show Value where
     show (Location addr)    = show addr

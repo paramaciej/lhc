@@ -22,7 +22,9 @@ executable latc
     ParLatte
 
     Asm.Generator
+    Asm.Operators
     Asm.RegAlloc
+    Asm.Utils
     Quattro.Alive
     Quattro.Generator
     Quattro.Types

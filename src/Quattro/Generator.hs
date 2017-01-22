@@ -72,7 +72,7 @@ genStmt block = A.ignorePos $ \case
         trueBlock <- freshBlock
         nextBlock <- freshBlock
         quitBlock $ Goto condBlock
-        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch trueBlock nextBlock
+        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch 0 trueBlock nextBlock
         performOnBlock trueBlock $ genBlock ifTrue >> quitBlock (Goto nextBlock)
         setActiveBlock nextBlock
 
@@ -83,7 +83,7 @@ genStmt block = A.ignorePos $ \case
         falseBlock <- freshBlock
         nextBlock  <- freshBlock
         quitBlock $ Goto condBlock
-        performOnBlock condBlock  $ genExpr expr >>= quitBlock . Branch trueBlock falseBlock
+        performOnBlock condBlock  $ genExpr expr >>= quitBlock . Branch 0 trueBlock falseBlock
         performOnBlock trueBlock  $ genBlock ifTrue >> quitBlock (Goto nextBlock)
         performOnBlock falseBlock $ genBlock ifFalse >> quitBlock (Goto nextBlock)
         setActiveBlock nextBlock
@@ -94,7 +94,7 @@ genStmt block = A.ignorePos $ \case
         bodyBlock <- freshBlock
         nextBlock <- freshBlock
         quitBlock $ Goto condBlock
-        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch bodyBlock nextBlock
+        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch 0 bodyBlock nextBlock
         performOnBlock bodyBlock $ genBlock whileBlock >> quitBlock (Goto condBlock)
         setActiveBlock nextBlock
 
@@ -106,9 +106,9 @@ genExpr = A.ignorePos $ \case
     A.ELitInt int -> return $ Literal int
     A.ELitBool bool -> return $ Literal $ if bool then 1 else 0
     A.EApp ident args -> do
-        mapM_ (genExpr >=> emitExpr . Param) (reverse args)
+        values <- mapM genExpr args
         ret <- freshLoc
-        emitExpr $ Call ret (ident ^. A.aa . A.identString)
+        emitExpr $ Call ret (ident ^. A.aa . A.identString) values
         return $ Location ret
     A.EString string -> do
         ret <- freshLoc
@@ -264,7 +264,7 @@ quitBlock oStmt = do
             qStmtGetter fun label . out .= Just oStmt
             case oStmt of
                 Goto destination -> appendEntryPoint label destination
-                Branch dest1 dest2 _ -> appendEntryPoint label dest1 >> appendEntryPoint label dest2
+                Branch _ dest1 dest2 _ -> appendEntryPoint label dest1 >> appendEntryPoint label dest2
                 _ -> return ()
         Just currentOut -> qStmtGetter fun label . out .= Just currentOut -- we leave previous escape statetment
 

@@ -4,12 +4,14 @@ module Asm.RegAlloc where
 
 import qualified Quattro.Types as Q
 import Quattro.Alive
+import Utils.Abstract (ARelOp(LTH, LEQ, GTH, GEQ, EQU, NEQ))
 import Utils.Verbose
 
 import Control.Lens
 import Control.Monad.State
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Text.Printf
 
 data Register = Register
     { _registerType :: RegType
@@ -23,9 +25,9 @@ data Reg = RAX | RSI | RDI -- TODO
   deriving (Eq, Ord, Enum, Bounded)
 
 data RealLoc = RegisterLoc Register | Stack Integer
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
 
-data Value = Location RealLoc | Literal Integer
+data Value = Location RealLoc | Literal Integer deriving Eq
 
 data LabelWithAlive = LabelWithAlive
     { _aliveLabel :: Q.Label
@@ -34,24 +36,29 @@ data LabelWithAlive = LabelWithAlive
 
 data Out
     = Goto LabelWithAlive
-    | Branch LabelWithAlive LabelWithAlive Q.Value
+    | Branch Q.Label LabelWithAlive LabelWithAlive Q.Value
     | Ret Q.Value
     | VRet
 
 data AsmStmt
-    = Mov Value Value
-    | Cmp Value Value
+    = Mov Value RealLoc
+    | Cmp Value RealLoc
+    | BinStmt Q.BinOp Value RealLoc
+    | CondMov Q.RelOp RealLoc RealLoc
     | Jmp String
     | Jz String
+    | Call String
     | LeaveRet
     | Label String
     | Globl String
+    | Custom String
+  deriving Eq
 
 data AllocSt = AllocSt
     { _stack :: M.Map Q.Address (S.Set RealLoc)
     , _registers :: M.Map Reg (Maybe Q.Address)
     , _asmStmts :: [AsmStmt]
-    }
+    } deriving Show
 
 data StmtWithAlive = StmtWithAlive
     { _stmt :: Q.Stmt
@@ -64,8 +71,7 @@ type StackFixStmt = (Q.Address, Integer, Integer)
 
 instance Show Value where
     show (Literal int) = "$" ++ show int
-    show (Location (Stack pos)) = show pos ++ "(%esp)"
-    show (Location (RegisterLoc register)) = show register
+    show (Location realLoc) = show realLoc
 
 instance Show Register where
     show (Register typ reg) = "%" ++ show typ ++ show reg
@@ -79,14 +85,34 @@ instance Show Reg where
     show RSI = "si"
     show RDI = "di"
 
+instance Show RealLoc where
+    show (RegisterLoc register) = show register
+    show (Stack pos)            = show ((-8) * (pos + 1)) ++ "(%rbp)"
+
 instance Show AsmStmt where
     show (Globl str) = ".globl " ++ str
     show (Label str) = str ++ ":"
-    show (Mov v1 v2) = "  mov " ++ show v1 ++ ", " ++ show v2
-    show (Cmp v1 v2) = "  cmp " ++ show v1 ++ ", " ++ show v2
-    show (Jmp label) = "  jmp " ++ label
-    show (Jz  label) = "  jz " ++ label
+    show (Mov v1 v2) = "  mov  " ++ show v1 ++ ", " ++ show v2
+    show (Cmp v1 v2) = "  cmp  " ++ show v1 ++ ", " ++ show v2
+    show (Jmp label) = "  jmp  " ++ label
+    show (Jz  label) = "  jz   " ++ label
+    show (Call fun)  = "  call " ++ fun
     show LeaveRet    = "  leave\n  ret"
+    show (Custom s)  = s
+    show (BinStmt op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
+      where
+        opShow Q.Add = "add "
+        opShow Q.Sub = "sub "
+        opShow Q.Mul = "imul" -- TODO
+    show (CondMov op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
+      where
+        opShow = \case
+            LTH -> "cmovll"
+            LEQ -> "cmovlel"
+            GTH -> "cmovgl"
+            GEQ -> "cmovgel"
+            EQU -> "cmovel"
+            NEQ -> "cmovnel"
 
 
 makeLenses ''Register
@@ -113,8 +139,8 @@ stmtsWithAlive inSets (Q.ClearFunction _ blockMap) block = foldr aux [] stmts
 outWithAlive :: M.Map Q.Label Q.AliveSet -> Q.OutStmt -> Out
 outWithAlive inSets = \case
     Q.Goto nextBlock -> Goto (LabelWithAlive nextBlock (inSets M.! nextBlock))
-    Q.Branch trueBlock falseBlock val ->
-        Branch (LabelWithAlive trueBlock (inSets M.! trueBlock)) (LabelWithAlive falseBlock (inSets M.! falseBlock)) val
+    Q.Branch fixLabel trueBlock falseBlock val ->
+        Branch fixLabel (LabelWithAlive trueBlock (inSets M.! trueBlock)) (LabelWithAlive falseBlock (inSets M.! falseBlock)) val
     Q.Ret val -> Ret val
     Q.VRet -> VRet
 

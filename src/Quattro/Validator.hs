@@ -55,7 +55,7 @@ validateEscapes qCode = forM_ (qCode ^. codeBlocks . to M.toList) $ \(label, qBl
     Nothing -> throwValErr "block hasn't got a escape statement!"
     Just out -> case out of
         Goto goto -> checkGoto goto
-        Branch br1 br2 _ -> checkGoto br1 >> checkGoto br2 >> return ()
+        Branch _ br1 br2 _ -> checkGoto br1 >> checkGoto br2 >> return ()
         _ -> return ()
       where
         checkGoto :: Label -> ValM ()

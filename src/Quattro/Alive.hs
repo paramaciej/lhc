@@ -34,11 +34,12 @@ clearFunction fCode = do
             return
                 $ M.insert label (ClearBlock (block ^. statements) (Goto newLabel))
                 $ M.insert newLabel (ClearBlock (stmtsForPhi nextLabel label) (Goto nextLabel)) mp
-        Branch labelTrue labelFalse val -> do
+        Branch _ labelTrue labelFalse val -> do
             newLabelTrue <- freshLabel
             newLabelFalse <- freshLabel
+            fixLabel <- freshLabel
             return
-                $ M.insert label (ClearBlock (block ^. statements) (Branch newLabelTrue newLabelFalse val))
+                $ M.insert label (ClearBlock (block ^. statements) (Branch fixLabel newLabelTrue newLabelFalse val))
                 $ M.insert newLabelTrue (ClearBlock (stmtsForPhi labelTrue label) (Goto labelTrue))
                 $ M.insert newLabelFalse (ClearBlock (stmtsForPhi labelFalse label) (Goto labelFalse)) mp
         Ret val -> return $ M.insert label (ClearBlock (block ^. statements) (Ret val)) mp
@@ -57,7 +58,7 @@ clearFunction fCode = do
             Ret _ -> acc
             VRet -> acc
             Goto label -> M.adjust (+1) label acc
-            Branch label1 label2 _ -> M.adjust (+10) label1 $ M.adjust (+10) label2 acc -- links from Branch doesn't interest us, so we add 10 instead of 1
+            Branch _ label1 label2 _ -> M.adjust (+10) label1 $ M.adjust (+10) label2 acc -- links from Branch doesn't interest us, so we add 10 instead of 1
 
     mergeBlocks :: M.Map Label ClearBlock -> M.Map Label ClearBlock
     mergeBlocks mp = M.foldrWithKey aux M.empty mp
@@ -92,10 +93,10 @@ stmtMod = \case
     BinStmt dest _ val1 val2 -> auxBinOp dest val1 val2
     CmpStmt dest _ val1 val2 -> auxBinOp dest val1 val2
     UniStmt dest _ val -> auxMov dest val
-    Param val -> auxVal val
-    Call dest _ -> S.delete dest
+    Call dest _ vs -> auxValues vs . S.delete dest
     StringLit dest _ -> S.delete dest
   where
+    auxValues = foldr ((.) . auxVal) id
     auxMov dest val = auxVal val . S.delete dest
     auxBinOp dest val1 val2 = auxVal val1 . auxVal val2 . S.delete dest
 
@@ -108,7 +109,7 @@ blockStmtsMod = foldr ((.) . stmtMod) id
 setFromOut :: M.Map Label AliveSet -> OutStmt -> AliveSet
 setFromOut mp = \case
     Goto nextBlock -> mp M.! nextBlock
-    Branch trueBlock falseBlock val -> auxVal val $ (mp M.! trueBlock) `S.union` (mp M.! falseBlock)
+    Branch _ trueBlock falseBlock val -> auxVal val $ (mp M.! trueBlock) `S.union` (mp M.! falseBlock)
     Ret val -> case val of
         Literal _ -> S.empty
         Location addr -> S.singleton addr
