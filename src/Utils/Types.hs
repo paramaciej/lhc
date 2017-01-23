@@ -164,8 +164,8 @@ getExprType expr = case expr ^. aa of
         Plus  -> binOpType Int Int e1 e2 `catchError` \_ -> binOpType Str Str e1 e2
         Minus -> binOpType Int Int e1 e2
     ERel e1 op e2 -> case op ^. aa of
-        EQU -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2
-        NEQ -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2
+        EQU -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2 `catchError` \_ -> binOpType Bool Str e1 e2
+        NEQ -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2 `catchError` \_ -> binOpType Bool Str e1 e2
         _   -> binOpType Bool Int e1 e2
     EAnd e1 e2 -> binOpType Bool Bool e1 e2
     EOr e1 e2  -> binOpType Bool Bool e1 e2

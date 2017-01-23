@@ -19,7 +19,9 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import qualified Data.Map as M
 import System.Environment
+import System.Exit
 import System.FilePath.Posix
+import System.IO
 import System.Process
 
 
@@ -39,14 +41,13 @@ main = getArgs >>= \case
 
                 programValid (toA program) >>= \case
                     Right () -> do
-                        liftIO $ putStrLn $ green "Program validated."
                         let simplified = simplifyProgram (toA program)
-                        verbosePrint $ "Simplified:\n" ++ show simplified
-
                         runExceptT (generateValidatedQuattro simplified) >>= \case
-                            Right x -> do
-                                verbosePrint $ show x
-                                let clear@(ClearProgram fs) = clearProgram x
+                            Right quattro -> do
+                                liftIO $ hPutStrLn stderr "OK"
+                                verbosePrint $ green "Simplified:\n" ++ show simplified
+                                verbosePrint $ show quattro
+                                let clear@(ClearProgram fs) = clearProgram quattro
                                 let inSets = M.unions $ map calculateInSets $ M.elems fs
 
                                 verbosePrint $ green "Cleared φ :\n" ++ show clear
@@ -58,12 +59,14 @@ main = getArgs >>= \case
                                 lift $ writeFile asmFile code
                                 _ <- lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -static -o " ++ dropExtension asmFile
                                 return ()
+                            Left err -> failAndShowError err
+                    Left err -> failAndShowError err
 
-
-                            Left err -> liftIO $ putStrLn err
-                    Left err -> liftIO $ putStrLn err
-
-            Bad err -> liftIO $ putStrLn $ red "Parser error: " ++ show err
+            Bad err -> failAndShowError $ red "Parser error: " ++ show err
+    failAndShowError err = liftIO $ do
+        hPutStrLn stderr "ERROR"
+        hPutStrLn stderr err
+        exitFailure
     usage = do
         putStrLn $ green "The Large Hadron Collider (or Latte (written in Haskell) Compiler)"
         progName <- getProgName

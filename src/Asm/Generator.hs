@@ -34,12 +34,12 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do
         ] ++ [Custom $ align "subq" ++ "$" ++ show rspShift ++ ", %rsp" | rspShift > 0] ++ after
   where
     inSets = calculateInSets fun
-    labelMod label = if label == entry then (True, funName) else (False, show (ALabel label))
+    labelMod label = if label == entry then (False, funName) else (True, show (ALabel label))
     blocksWithInSets = M.mapWithKey (\label block -> (block, inSets M.! label)) blocks
     blocksWithStringLabels = M.mapKeys labelMod blocksWithInSets
 
 genBlock :: Q.ClearFunction -> ((Bool, String), (Q.ClearBlock, Q.AliveSet)) -> RoDataM [AsmStmt]
-genBlock fun ((isEntry, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
+genBlock fun ((_, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
     verbosePrint $ green "\nBLOCK " ++ label
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts

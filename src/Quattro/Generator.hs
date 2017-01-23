@@ -180,7 +180,7 @@ genRelOp :: RelOp -> A.Expr -> A.Expr -> GenM Value
 genRelOp op e1 e2 = do
     loc1 <- genExpr e1
     loc2 <- genExpr e2
-    ret <- freshLocForValue loc1
+    ret <- freshLoc Int
     emitExpr $ CmpStmt ret op loc1 loc2
     return $ Location ret
 

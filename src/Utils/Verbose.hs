@@ -3,6 +3,7 @@
 module Utils.Verbose where
 
 import Control.Monad.Reader
+import System.IO
 
 data CompilerOpts = CompilerOpts
     { sourceFilename :: FilePath
@@ -13,7 +14,7 @@ type CompilerOptsM = ReaderT CompilerOpts IO
 
 verbosePrint :: (MonadIO m, MonadReader CompilerOpts m) => String -> m ()
 verbosePrint str = asks verbose >>= \case
-        True -> liftIO $ putStrLn str
+        True -> liftIO $ hPutStrLn stderr str
         False -> return ()
 
 runWithOptions :: String -> Bool -> CompilerOptsM () -> IO ()
