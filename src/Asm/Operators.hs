@@ -41,7 +41,7 @@ genBinOpWithReplacement newAddr (Q.Location argAddr) destAddr op = do
     asmStmts %= (++ [BinStmt op vArg lDest]) -- TODO czemu??? chyba jest ok
     replaceAddr destAddr newAddr
 genBinOpWithReplacement newAddr (Q.Literal literal) destAddr op = do
-    let vArg = Literal literal
+    let vArg = IntLiteral literal
     lDest <- fastestReadLoc destAddr
     asmStmts %= (++ [BinStmt op vArg lDest])
     replaceAddr destAddr newAddr
@@ -96,22 +96,22 @@ genCmp :: Q.RelOp -> Q.Address -> Q.Value -> Q.Value -> AllocM ()
 genCmp op addr val1 val2 = do
     dest <- fastestReadLoc addr
     (val, loc) <- atLeastOneRegFromValues val1 val2
-    asmStmts %= (++ [Cmp val loc, Mov (Literal 0) dest])
+    asmStmts %= (++ [Cmp val loc, Mov (IntLiteral 0) dest])
     free <- getFreeRegister
     dest <- fastestReadLoc addr
     let litLoc = RegisterLoc $ valueMatchRegister free (Q.Literal 1)
-    asmStmts %= (++ [Mov (Literal 1) litLoc, CondMov op litLoc dest])
+    asmStmts %= (++ [Mov (IntLiteral 1) litLoc, CondMov op litLoc dest])
 
 genUni :: Q.UniOp -> Q.Address -> Q.Value -> AllocM ()
 genUni op addr value = case op of
     Q.Not -> do
         v <- fastestReadVal value
         loc <- fastestReadLoc addr
-        asmStmts %= (++ [Mov v loc, Xor (Literal 1) loc])
+        asmStmts %= (++ [Mov v loc, Xor (IntLiteral 1) loc])
     Q.Neg -> do
         v <- fastestReadVal value
         loc <- fastestReadLoc addr
-        asmStmts %= (++ [Mov v loc, Not loc, BinStmt Add (Literal 1) loc])
+        asmStmts %= (++ [Mov v loc, Not loc, BinStmt Add (IntLiteral 1) loc])
 
 genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
 genCall _ funName args = do

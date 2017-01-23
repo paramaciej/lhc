@@ -4,6 +4,7 @@ module Asm.RegAlloc where
 
 import Quattro.Alive
 import qualified Quattro.Types as Q
+import Quattro.Types (RegType (Ptr, Int))
 import Utils.Abstract (ARelOp(LTH, LEQ, GTH, GEQ, EQU, NEQ))
 import Utils.Verbose
 
@@ -18,8 +19,6 @@ data Register = Register
     , _registerReg :: Reg
     } deriving (Eq, Ord)
 
-data RegType = Ptr | Int
-  deriving (Eq, Ord)
 
 data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 -- TODO czy na pewno nie chcę RSP i RBP?
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -30,7 +29,11 @@ argRegs = [RDI, RSI, RDX, RCX, R8, R9]
 data RealLoc = RegisterLoc Register | Stack Integer
   deriving (Eq, Ord)
 
-data Value = Location RealLoc | Literal Integer deriving Eq
+data Value
+    = Location RealLoc
+    | IntLiteral Integer
+    | StrLiteral Integer
+  deriving Eq
 
 newtype ALabel = ALabel Q.Label
 
@@ -66,11 +69,15 @@ data AsmStmt
     | Label String
     | Globl String
     | Custom String
+    | RoString Integer String
+    | SectionRoData
+    | SectionText
   deriving Eq
 
 data AllocSt = AllocSt
     { _stack :: M.Map Q.Address (S.Set RealLoc)
     , _registers :: M.Map Reg (Maybe Q.Address)
+    , _roStrings :: M.Map Integer String
     , _asmStmts :: [AsmStmt]
     } deriving Show
 
@@ -87,7 +94,8 @@ instance Show ALabel where
     show (ALabel int) = "_" ++ show int
 
 instance Show Value where
-    show (Literal int) = "$" ++ show int
+    show (IntLiteral int)   = "$" ++ show int
+    show (StrLiteral nr)    = "$_STRING_" ++ show nr
     show (Location realLoc) = show realLoc
 
 instance Show Register where
@@ -128,20 +136,23 @@ instance Show RealLoc where
     show (Stack pos)            = show ((-8) * (pos + 1)) ++ "(%rbp)"
 
 instance Show AsmStmt where
-    show (Globl str)  = ".globl " ++ str
-    show (Label str)  = str ++ ":"
-    show (Mov v1 v2)  = "  mov  " ++ show v1 ++ ", " ++ show v2
-    show (Cmp v1 v2)  = "  cmp  " ++ show v1 ++ ", " ++ show v2
-    show (Jmp label)  = "  jmp  " ++ label
-    show (Jz  label)  = "  jz   " ++ label
-    show (Push val)   = "  push " ++ show val
-    show (Call fun)   = "  call " ++ fun
-    show LeaveRet     = "  leave\n  ret"
-    show (IMul v1 v2) = "  imull " ++ show v1 ++ ", " ++ show v2
-    show (IDiv v1)    = "  idivl " ++ show v1
-    show CDQ          = "  cdq"
-    show (Xor v1 v2)  = "  xorl " ++ show v1 ++ ", " ++ show v2
-    show (Not v1)     = "  notl " ++ show v1
+    show (Globl str)    = ".globl " ++ str
+    show (Label str)    = str ++ ":"
+    show (Mov v1 v2)    = "  mov  " ++ show v1 ++ ", " ++ show v2
+    show (Cmp v1 v2)    = "  cmp  " ++ show v1 ++ ", " ++ show v2
+    show (Jmp label)    = "  jmp  " ++ label
+    show (Jz  label)    = "  jz   " ++ label
+    show (Push val)     = "  push " ++ show val
+    show (Call fun)     = "  call " ++ fun
+    show LeaveRet       = "  leave\n  ret"
+    show (IMul v1 v2)   = "  imull " ++ show v1 ++ ", " ++ show v2
+    show (IDiv v1)      = "  idivl " ++ show v1
+    show CDQ            = "  cdq"
+    show (Xor v1 v2)    = "  xorl " ++ show v1 ++ ", " ++ show v2
+    show (Not v1)       = "  notl " ++ show v1
+    show SectionRoData  = ".section .rodata"
+    show SectionText    = ".section .text"
+    show (RoString i s) = "_STRING_" ++ show i ++ ":\n  .string " ++ s
     show (Custom s)   = s
     show (BinStmt op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
       where
@@ -168,7 +179,7 @@ isRegLoc (RegisterLoc _) = True
 isRegLoc _ = False
 
 initialAllocSt :: Q.AliveSet -> AllocSt
-initialAllocSt inSet = AllocSt (M.fromList $ zip (S.toList inSet) (map (S.singleton . Stack) [0..])) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) []
+initialAllocSt inSet = AllocSt (M.fromList $ zip (S.toList inSet) (map (S.singleton . Stack) [0..])) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) M.empty []
 
 
 stmtsWithAlive :: M.Map Q.Label Q.AliveSet -> Q.ClearBlock -> [StmtWithAlive]

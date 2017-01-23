@@ -3,6 +3,7 @@ module Asm.Utils where
 
 import Asm.RegAlloc
 import qualified Quattro.Types as Q
+import Quattro.Types (RegType (Ptr, Int))
 import Utils.Show
 import Utils.Verbose
 
@@ -33,7 +34,7 @@ fastestReadLoc addr = use (stack . at addr) >>= \case
         return loc
 
 fastestReadVal :: Q.Value -> AllocM Value
-fastestReadVal (Q.Literal literal) = return $ Literal literal
+fastestReadVal (Q.Literal literal) = return $ IntLiteral literal
 fastestReadVal (Q.Location addr) = Location <$> fastestReadLoc addr
 
 valAsLocation :: Q.Value -> AllocM RealLoc
@@ -41,7 +42,7 @@ valAsLocation (Q.Location addr) = fastestReadLoc addr
 valAsLocation val@(Q.Literal literal) = do
     reg <- getFreeRegister
     let loc = RegisterLoc $ valueMatchRegister reg val
-    asmStmts %= (++ [Mov (Literal literal) loc])
+    asmStmts %= (++ [Mov (IntLiteral literal) loc])
     return loc
 
 atLeastOneRegFromValues :: Q.Value -> Q.Value -> AllocM (Value, RealLoc)
@@ -128,7 +129,7 @@ valueMatchRegister reg (Q.Literal _) = Register Int reg
 valueMatchRegister reg (Q.Location addr) = addressMatchRegister reg addr
 
 addressMatchRegister :: Reg -> Q.Address -> Register
-addressMatchRegister reg _ = Register Int reg -- TODO WIELKOSC DANYCH!
+addressMatchRegister reg addr = Register (addr ^. Q.addressType) reg
 
 valueFromReg :: Reg -> AllocM (Maybe Value)
 valueFromReg reg = do
@@ -228,7 +229,8 @@ localsUsed stmts = if S.null locals then 0 else S.findMax locals + 1
         BinStmt _ val loc -> fromVal val . fromLoc loc
         CondMov _ loc1 loc2 -> fromLoc loc1 . fromLoc loc2
         _ -> id
-    fromVal (Literal _) = id
+    fromVal (IntLiteral _) = id
+    fromVal (StrLiteral _) = id
     fromVal (Location loc) = fromLoc loc
     fromLoc (RegisterLoc _) = id
     fromLoc (Stack i) = S.insert i
@@ -237,11 +239,11 @@ registersAndStackInfo :: AllocM String
 registersAndStackInfo = do
     regs <- M.elems <$> use registers
     ss <- M.assocs <$> use stack
-    let regInfo = intercalate "|" $ map (maybe " - " (printf "%3d")) regs
+    let regInfo = intercalate "|" $ map (maybe " - " (printf "%3d" . (^. Q.addressLoc))) regs
     let stackInfo = intercalate " | " $ map addrInfo ss
     return $ regInfo ++ red " || " ++ stackInfo
   where
-    addrInfo (addr, set) = yellow (printf "%3d" addr) ++ ": " ++ intercalate ", " (map showRealLoc $ S.elems set)
+    addrInfo (addr, set) = yellow (printf "%3d" $ addr ^. Q.addressLoc) ++ ": " ++ intercalate ", " (map showRealLoc $ S.elems set)
     showRealLoc (RegisterLoc r) = show r
     showRealLoc (Stack i)       = printf "%4s" $ "St" ++ show i
 

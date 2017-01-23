@@ -36,7 +36,14 @@ data OutStmt
     | Ret Value
     | VRet
 
-type Address = Integer
+data RegType = Ptr | Int
+  deriving (Eq, Ord, Show)
+
+data Address = Address
+    { _addressLoc :: Integer
+    , _addressType :: RegType
+    } deriving (Eq, Ord)
+
 type Label = Integer
 
 data Value = Location Address | Literal Integer
@@ -55,6 +62,7 @@ data QCode = QCode
 
 data LocalInfo = LocalInfo
     { _address :: M.Map Label Address
+    , _locType :: RegType
     , _defIn :: DefPlace
     , _prev :: Maybe LocalInfo
     } deriving Show
@@ -66,6 +74,7 @@ data QuattroSt = QuattroSt
     , _funCode :: M.Map A.Ident QCode
     , _addressMax :: Integer
     , _labelMax :: Integer
+    , _funRetTypes :: M.Map A.Ident RegType
     } deriving Show
 
 type GenM = StateT QuattroSt CompilerOptsM
@@ -91,6 +100,9 @@ newtype ClearProgram = ClearProgram (M.Map String ClearFunction)
 
 
 type AliveSet = S.Set Address
+
+instance Show Address where
+    show (Address x _) = show x
 
 instance Show ProgramCode where
     show (ProgramCode functions) = showAbsProgCode functions
@@ -149,6 +161,7 @@ instance Show Value where
     show (Literal int)      = red $ "$" ++ show int
 
 
+makeLenses ''Address
 makeLenses ''QBlock
 makeLenses ''QCode
 makeLenses ''LocalInfo

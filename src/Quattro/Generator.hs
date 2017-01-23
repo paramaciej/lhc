@@ -9,6 +9,7 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Map as M
+import Data.Maybe
 
 
 genProgram :: A.Program -> GenM ()
@@ -20,7 +21,7 @@ genTopDef topDef = do
     let ident = topDef ^. A.aa . A.topDefIdent
 
     codeForFun ident
-    mapM_ (uncurry $ genFunArg block) (zip [0..] $ topDef ^. A.aa . A.topDefArgs ^.. traverse . A.aa . A.argIdent) -- TODO
+    mapM_ (uncurry $ genFunArg block) (zip [0..] $ topDef ^. A.aa . A.topDefArgs ^.. traverse . A.aa)
 
     genBlock block
 
@@ -43,20 +44,20 @@ genStmt :: A.Block -> A.Stmt -> GenM ()
 genStmt block = A.ignorePos $ \case
     A.Empty -> return ()
     A.BStmt block -> genBlock block
-    A.Decl _ items -> forM_ items $ A.ignorePos $ \case
-        A.NoInit ident -> declare block ident
+    A.Decl typ items -> forM_ items $ A.ignorePos $ \case
+        A.NoInit ident -> declareWithType block ident typ
         A.Init ident expr -> do
-            declare block ident
+            declareWithType block ident typ
             genExpr expr >>= setLocal ident
     A.Ass ident expr -> genExpr expr >>= setLocal ident
     A.Incr ident -> do
         loc <- getLocal ident
-        temp <- freshLoc
+        temp <- freshLocForIdent ident
         emitExpr $ BinStmt temp Add (Location loc) (Literal 1)
         setLocal ident $ Location temp
     A.Decr ident -> do
         loc <- getLocal ident
-        temp <- freshLoc
+        temp <- freshLocForIdent ident
         emitExpr $ BinStmt temp Sub (Location loc) (Literal 1)
         setLocal ident $ Location temp
     A.Ret expr -> do
@@ -101,11 +102,14 @@ genExpr = A.ignorePos $ \case
     A.ELitBool bool -> return $ Literal $ if bool then 1 else 0
     A.EApp ident args -> do
         values <- mapM genExpr args
-        ret <- freshLoc
-        emitExpr $ Call ret (ident ^. A.aa . A.identString) values
-        return $ Location ret
+        use (funRetTypes . at ident) >>= \case
+            Just typ -> do
+                ret <- freshLoc typ
+                emitExpr $ Call ret (ident ^. A.aa . A.identString) values
+                return $ Location ret
+            Nothing -> error $ "TYPE FOR FUNC " ++ show ident ++ " NOT FOUND"
     A.EString string -> do
-        ret <- freshLoc
+        ret <- freshLoc Ptr
         emitExpr $ StringLit ret string
         return $ Location ret
 
@@ -144,18 +148,18 @@ genMov :: Address -> Value -> GenM ()
 genMov to from = emitExpr $ Mov to from
 
 
-genFunArg :: A.Block -> Integer -> A.Ident -> GenM ()
-genFunArg block number ident = do
-    declare block ident
+genFunArg :: A.Block -> Integer -> A.AArg -> GenM ()
+genFunArg block number arg = do
+    declareWithType block (arg ^. A.argIdent) (arg ^. A.argType)
     label <- use currentBlock
-    addr <- use $ locals . at ident . singular _Just . address . at label . singular _Just
+    addr <- use $ locals . at (arg ^. A.argIdent) . singular _Just . address . at label . singular _Just
     emitExpr $ FunArg addr number
 
 
 genUniOp :: UniOp -> A.Expr -> GenM Value
 genUniOp op e = do
     loc <- genExpr e
-    ret <- freshLoc
+    ret <- freshLocForValue loc
     emitExpr $ UniStmt ret op loc
     return $ Location ret
 
@@ -164,7 +168,7 @@ genBinOp :: BinOp -> A.Expr -> A.Expr -> GenM Value
 genBinOp op e1 e2 = do
     loc1 <- genExpr e1
     loc2 <- genExpr e2
-    ret <- freshLoc
+    ret <- freshLocForValue loc1
     emitExpr $ BinStmt ret op loc1 loc2
     return $ Location ret
 
@@ -172,7 +176,7 @@ genRelOp :: RelOp -> A.Expr -> A.Expr -> GenM Value
 genRelOp op e1 e2 = do
     loc1 <- genExpr e1
     loc2 <- genExpr e2
-    ret <- freshLoc
+    ret <- freshLocForValue loc1
     emitExpr $ CmpStmt ret op loc1 loc2
     return $ Location ret
 
@@ -190,14 +194,21 @@ emitExprIn label stmt = do
     aux :: QBlock -> QBlock
     aux qBlock = case qBlock ^. out of
             Nothing -> qBlock & blockStmts %~ cons stmt
-            Just _ -> error "TRYING TO ADD A STMT TO A QUITED BLOCK" -- TODO simplify this if generated code is OK
+            Just _ -> error "TRYING TO ADD A STMT TO A QUITED BLOCK"
 
-freshLoc :: GenM Address
-freshLoc = do
+freshLoc :: RegType -> GenM Address
+freshLoc regType = do
     lastLoc <- use addressMax
     addressMax += 1
-    return lastLoc
+    return $ Address lastLoc regType
 
+
+freshLocForIdent :: A.Ident -> GenM Address
+freshLocForIdent ident = use (locals . at ident . singular _Just . locType) >>= freshLoc
+
+freshLocForValue :: Value -> GenM Address
+freshLocForValue (Literal _) = freshLoc Int
+freshLocForValue (Location (Address _ t)) = freshLoc t
 
 freshBlock :: GenM Label
 freshBlock = do
@@ -210,12 +221,23 @@ freshBlock = do
 setActiveBlock :: Label -> GenM ()
 setActiveBlock label = currentBlock .= label
 
-declare :: A.Block -> A.Ident -> GenM ()
-declare block ident = do
-    addr <- freshLoc
+declare :: A.Block -> A.Ident -> RegType -> GenM ()
+declare block ident typ = do
+    addr <- freshLoc typ
     label <- use currentBlock
     oldInfo <- use (locals . at ident)
-    locals . at ident .= Just (LocalInfo (M.fromList [(label, addr)]) (InBlock block) oldInfo)
+    locals . at ident .= Just (LocalInfo (M.fromList [(label, addr)]) typ (InBlock block) oldInfo)
+
+declareWithType :: A.Block -> A.Ident -> A.Type -> GenM ()
+declareWithType block ident = declare block ident . typeToRegType
+
+typeToRegType :: A.Type -> RegType
+typeToRegType = A.ignorePos $ \case
+    A.Int   -> Int
+    A.Bool  -> Int
+    A.Void  -> Int
+    A.Str   -> Ptr
+    _       -> error "fun type as reg!"
 
 setLocal :: A.Ident -> Value -> GenM ()
 setLocal ident val = do
@@ -224,7 +246,7 @@ setLocal ident val = do
         Location addr -> locals . at ident . _Just . address . at bl .= Just addr
         Literal _ -> do
             -- we don't use getLocal, because previous value of variable doesn't interest us here
-            newAddr <-freshLoc
+            newAddr <- freshLocForValue val
             locals . at ident . _Just . address . at bl .= Just newAddr
             genMov newAddr val
 
@@ -243,7 +265,7 @@ getLocalFrom label ident = use (locals . at ident) >>= \case
 genPhi :: Label -> A.Ident -> GenM Address
 genPhi bl ident = do
     fun <- getCurrentFun
-    newAddr <- freshLoc
+    newAddr <- freshLocForIdent ident
     locals . at ident . _Just . address . at bl .= Just newAddr
 
     phiList <- use (qStmtGetter fun bl . entry) >>= mapM getAddr

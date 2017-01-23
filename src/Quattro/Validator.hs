@@ -16,9 +16,20 @@ type ValM = ExceptT String CompilerOptsM
 
 generateValidatedQuattro :: A.Program -> ValM ProgramCode
 generateValidatedQuattro program = do
-    let initialState = QuattroSt M.empty Nothing 0 M.empty 1 1
+    let initialState = QuattroSt M.empty Nothing 0 M.empty 1 1 funReturns
     finalState <- lift $ execStateT (genProgram program) initialState
     validateQuattro finalState
+  where
+    funReturns = M.fromList $ runtimes ++ map aux (program ^. A.aa . A.programTopDefs ^.. traverse . A.aa)
+    aux topDef = (topDef ^. A.topDefIdent, typeToRegType (topDef ^. A.topDefType))
+    runtimes =
+        [ runtimeFun "printInt"     Int
+        , runtimeFun "printString"  Int
+        , runtimeFun "error"        Int
+        , runtimeFun "readInt"      Int
+        , runtimeFun "readString"   Ptr]
+    runtimeFun name retType = (A.makeAbs (A.Ident name), retType)
+
 
 
 validateQuattro :: QuattroSt -> ValM ProgramCode

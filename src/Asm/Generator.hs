@@ -40,7 +40,10 @@ genBlock fun ((isEntry, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts
     fromOut       <- execStateT (genAndAllocEscape newOut) (initialAllocSt outSet)
-    return $ Label label : stackRestored ^. asmStmts ++ fromOut ^. asmStmts
+    let ro = (M.elems . M.mapWithKey RoString) $ stackRestored ^. roStrings
+    let roMod = if null ro then id else ((SectionRoData : ro ++ [SectionText]) ++)
+
+    return $ roMod $ Label label : stackRestored ^. asmStmts ++ fromOut ^. asmStmts
   where
     inSets = calculateInSets fun
     outSet = setFromOut inSets out
@@ -78,8 +81,11 @@ genAndAllocStmt stmtWithAlive = do
             when (addrStayAlive addr $ stmtWithAlive ^. after) $ do
                 registers . at RAX .= Just (Just addr)
                 stack . at addr .= Just (S.singleton $ RegisterLoc $ addressMatchRegister RAX addr)
-
-        _ -> return () -- TODO TODO TODO !!!
+        Q.StringLit addr string -> do
+            strNumber <- toInteger . length <$> use roStrings
+            roStrings %= M.insert strNumber string
+            loc <- fastestReadLoc addr
+            asmStmts %= (++ [Mov (StrLiteral strNumber) loc])
     killDead stmtWithAlive
     showStmtGeneratedCode stmtWithAlive
     unlines .map show . drop prevStmts <$> use asmStmts >>= \case
@@ -93,7 +99,7 @@ genAndAllocEscape (Goto next) = do
 genAndAllocEscape (Branch nextTrue nextFalse val) = do
     let tmpLabel = "_FALSE" ++ show (nextFalse ^. aliveLabel)
     cmpArg <- valAsLocation val
-    asmStmts %= (++ [Cmp (Literal 0) cmpArg, Jz tmpLabel])
+    asmStmts %= (++ [Cmp (IntLiteral 0) cmpArg, Jz tmpLabel])
     fixStack (nextTrue ^. afterLabel)
     asmStmts %= (++ [Jmp (show $ nextTrue ^. aliveLabel), Label tmpLabel])
     fixStack (nextFalse ^. afterLabel)
