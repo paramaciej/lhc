@@ -4,29 +4,20 @@ module Main where
 
 import ErrM
 import ParLatte
-import LexLatte
 
-import Utils.Position
+import Asm.Generator
+import Quattro.Alive
+import Quattro.Types
+import Quattro.Validator
+import Utils.Eval
 import Utils.Show
-import Utils.Abstract as A
 import Utils.ToAbstract
 import Utils.Types
 import Utils.Verbose
 
-import Utils.Eval
-import Quattro.Alive
-import Quattro.Generator
-import Quattro.Types
-import Quattro.Validator
-
-import Asm.Generator
-
-import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Monad.State
 import qualified Data.Map as M
-import Data.Maybe
 import System.Environment
 import System.FilePath.Posix
 import System.Process
@@ -49,23 +40,23 @@ main = getArgs >>= \case
                 programValid (toA program) >>= \case
                     Right () -> do
                         liftIO $ putStrLn $ green "Program validated."
-                        let simple = simplifyProgram (toA program)
-                        verbosePrint $ "Simplified:\n" ++ show simple
+                        let simplified = simplifyProgram (toA program)
+                        verbosePrint $ "Simplified:\n" ++ show simplified
 
-                        runExceptT (generateValidatedQuattro simple) >>= \case
+                        runExceptT (generateValidatedQuattro simplified) >>= \case
                             Right x -> do
                                 verbosePrint $ show x
-                                let clear@(ClearProgram functions) = clearProgram x
-                                let inSets = M.unions $ map calculateInSets $ M.elems functions
+                                let clear@(ClearProgram fs) = clearProgram x
+                                let inSets = M.unions $ map calculateInSets $ M.elems fs
 
                                 verbosePrint $ green "Cleared φ :\n" ++ show clear
-                                verbosePrint $ green "Alive sets:\n" ++ unlines (map (\(label, set) -> yellow (show label) ++ ": " ++ show set) $ M.toList inSets)
+                                verbosePrint $ green "Alive sets:\n" ++ unlines (map (\(label, ss) -> yellow (show label) ++ ": " ++ show ss) $ M.toList inSets)
 
                                 code <- unlines . map show <$> genAsm clear
 
                                 asmFile <- (`replaceExtension` "s") <$> asks sourceFilename
                                 lift $ writeFile asmFile code
-                                lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -o " ++ dropExtension asmFile
+                                _ <- lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -o " ++ dropExtension asmFile
                                 return ()
 
 

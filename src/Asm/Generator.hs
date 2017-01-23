@@ -1,20 +1,18 @@
 {-# LANGUAGE LambdaCase #-}
 module Asm.Generator where
 
-import Data.Maybe
-import qualified Data.Map as M
-import qualified Data.Set as S
-import Control.Monad.State
-import Control.Lens
-
-import Asm.RegAlloc
 import Asm.Operators
+import Asm.RegAlloc
 import Asm.Utils
 import Quattro.Alive
 import qualified Quattro.Types as Q
 import Utils.Show
 import Utils.Verbose
 
+import Control.Lens
+import Control.Monad.State
+import qualified Data.Map as M
+import qualified Data.Set as S
 
 genAsm :: Q.ClearProgram -> CompilerOptsM [AsmStmt]
 genAsm (Q.ClearProgram functions) = concat <$> mapM genFunction (M.toAscList functions)
@@ -36,7 +34,7 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do -- TODO dobra kol
     blocksWithStringLabels = M.mapKeys labelMod blocksWithInSets
 
 genBlock :: Q.ClearFunction -> (String, (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
-genBlock fun (label, (block@(Q.ClearBlock stmts out), thisInSet)) = do
+genBlock fun (label, (block@(Q.ClearBlock _ out), thisInSet)) = do
     verbosePrint $ green "\nBLOCK " ++ label
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts
@@ -45,7 +43,7 @@ genBlock fun (label, (block@(Q.ClearBlock stmts out), thisInSet)) = do
   where
     inSets = calculateInSets fun
     outSet = setFromOut inSets out
-    withAlive = stmtsWithAlive inSets fun block
+    withAlive = stmtsWithAlive inSets block
     newOut = outWithAlive inSets out
 
 

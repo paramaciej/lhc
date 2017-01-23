@@ -1,18 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
 module Quattro.Generator where
 
-import Data.List
-import qualified Data.Map as M
-import Data.Maybe
-import Utils.Verbose
+import Quattro.Types
+import qualified Utils.Abstract as A
 import Utils.Types
-import Utils.Show
+
+import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
-import Control.Lens
+import qualified Data.Map as M
 
-import qualified Utils.Abstract as A
-import Quattro.Types
 
 genProgram :: A.Program -> GenM ()
 genProgram program = mapM_ genTopDef (program ^. A.aa . A.programTopDefs)
@@ -46,7 +43,7 @@ genStmt :: A.Block -> A.Stmt -> GenM ()
 genStmt block = A.ignorePos $ \case
     A.Empty -> return ()
     A.BStmt block -> genBlock block
-    A.Decl t items -> forM_ items $ A.ignorePos $ \case
+    A.Decl _ items -> forM_ items $ A.ignorePos $ \case
         A.NoInit ident -> declare block ident
         A.Init ident expr -> do
             declare block ident
@@ -67,7 +64,6 @@ genStmt block = A.ignorePos $ \case
         quitBlock $ Ret temp
     A.VRet -> quitBlock VRet
     A.Cond expr ifTrue -> do
-        currBlock <- use currentBlock
         condBlock <- freshBlock
         trueBlock <- freshBlock
         nextBlock <- freshBlock
@@ -77,7 +73,6 @@ genStmt block = A.ignorePos $ \case
         setActiveBlock nextBlock
 
     A.CondElse expr ifTrue ifFalse -> do
-        currBlock  <- use currentBlock
         condBlock  <- freshBlock
         trueBlock  <- freshBlock
         falseBlock <- freshBlock
@@ -89,7 +84,6 @@ genStmt block = A.ignorePos $ \case
         setActiveBlock nextBlock
 
     A.While expr whileBlock -> do
-        currBlock <- use currentBlock
         condBlock <- freshBlock
         bodyBlock <- freshBlock
         nextBlock <- freshBlock

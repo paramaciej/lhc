@@ -54,11 +54,11 @@ instance ToAbstract L.Item AItem where
     _to (L.Init i _ e) = Init (toA i) (toA e)
 
 instance ToAbstract L.Type AType where
-    _to (L.Int _) = Int
-    _to (L.Str _) = Str
+    _to (L.Int _)  = Int
+    _to (L.Str _)  = Str
     _to (L.Bool _) = Bool
     _to (L.Void _) = Void
-    -- TODO fun?
+    _to L.Fun{}    = error "impossible happened"
 
 instance ToAbstract L.Expr AExpr where
     _to (L.EVar i) = EVar (toA i)

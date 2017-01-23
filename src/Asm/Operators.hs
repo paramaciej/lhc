@@ -23,10 +23,10 @@ genBinOp = \case
             | not (addrStayAlive addr2 aliveAfter) -> genBinOpWithReplacement addr val1 addr2 op
             | not (addrStayAlive addr1 aliveAfter) -> genBinOpWithReplacement addr val2 addr1 op
             | otherwise -> genBinOpWithMov addr op val1 val2
-        (Q.Location argAddr, Q.Literal lit)
+        (Q.Location argAddr, Q.Literal _)
             | not (addrStayAlive argAddr aliveAfter) -> genBinOpWithReplacement addr val2 argAddr op
             | otherwise -> genBinOpWithMov addr op val1 val2
-        (Q.Literal lit, Q.Location argAddr)
+        (Q.Literal _, Q.Location argAddr)
             | not (addrStayAlive argAddr aliveAfter) -> genBinOpWithReplacement addr val1 argAddr op
             | otherwise -> genBinOpWithMov addr op val1 val2
         (Q.Literal _, Q.Literal _) -> genBinOpWithMov addr op val1 val2
@@ -65,7 +65,7 @@ genCmp op addr val1 val2 = do
     asmStmts %= (++ [Mov (Literal 1) litLoc, CondMov op litLoc dest])
 
 genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
-genCall addr funName args = do
+genCall _ funName args = do
     let (argRegisters, restRegisters) = splitAt (length args) [RDI, RSI, RDX] -- TODO add 6 arg registers!
     mapM_ callerSave $ [RAX, RDX, RSI, RDI] ++ restRegisters -- save caller-save registers
     mapM_ safeMoveToReg $ zip (take 6 args) argRegisters -- move arguments to registers

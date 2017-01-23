@@ -62,7 +62,7 @@ atLeastOneRegFromValues qVal1 qVal2 = do
 atLeastOneReg :: Q.Address -> Q.Address -> AllocM (Value, RealLoc)
 atLeastOneReg addr1 addr2 = do
     val1@(Location loc1) <- fastestReadVal (Q.Location addr1)
-    val2@(Location loc2) <- fastestReadVal (Q.Location addr2)
+    (Location loc2)      <- fastestReadVal (Q.Location addr2)
     case (loc1, loc2) of
         (RegisterLoc _, RegisterLoc _) -> return (val1, loc2)
         (RegisterLoc _, Stack _) -> return (val1, loc2)
@@ -98,7 +98,7 @@ getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
     [] -> do
         ss <- M.map (S.partition isRegLoc) <$> use stack
         case M.assocs $ M.filter (\(reg, stack) -> not (S.null reg || S.null stack)) ss of
-            (addr, (regLocs, stackLocs)):_ -> do
+            (addr, (regLocs, _)):_ -> do
                 let regLoc:_ = S.elems regLocs
                 let RegisterLoc (Register _ reg) = regLoc
                 stack . at addr . _Just %= S.delete regLoc
@@ -128,7 +128,7 @@ valueMatchRegister reg (Q.Literal _) = Register Int reg
 valueMatchRegister reg (Q.Location addr) = addressMatchRegister reg addr
 
 addressMatchRegister :: Reg -> Q.Address -> Register
-addressMatchRegister reg addr = Register Int reg -- TODO WIELKOSC DANYCH!
+addressMatchRegister reg _ = Register Int reg -- TODO WIELKOSC DANYCH!
 
 valueFromReg :: Reg -> AllocM (Maybe Value)
 valueFromReg reg = do
@@ -158,6 +158,7 @@ movValToAddrLocatedIn val addr realLocs = do
     destReg <- case S.elems (S.filter isRegLoc realLocs) of
         [] -> getFreeRegister
         RegisterLoc (Register _ reg):_ -> return reg
+        _ -> error "impossible happened"
 
     setRegisterToAddr destReg addr
     source <- fastestReadVal val
@@ -181,7 +182,7 @@ restoreStack alive = do
   where
     getStackFromAddr ss = (\(Stack x) -> x) . S.findMin . S.filter (not . isRegLoc) . fromJust . (`M.lookup` ss)
     getCycles graph = filter ((>1) . length) $ snd $ M.foldrWithKey aux (graph, []) graph
-    aux before after (graph, cycles) = if before `M.member` graph
+    aux before _ (graph, cycles) = if before `M.member` graph
         then let (newGraph, path) = run before (graph, []) in (newGraph, path:cycles)
         else (graph, cycles)
     run start (graph, path) = case start `M.lookup` graph of

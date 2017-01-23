@@ -4,7 +4,6 @@ module Utils.Position
     ) where
 
 import AbsLatte
-import System.Console.ANSI
 
 combineBeginEnd :: (Positioned a, Positioned b) => a -> b -> Position
 combineBeginEnd a b = Position (begin $ position a) (end $ position b)

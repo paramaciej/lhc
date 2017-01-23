@@ -48,6 +48,7 @@ cutUnreachableBlocks qCode = if null unreachable
 
 qBlockToBlock :: QBlock -> Block
 qBlockToBlock (QBlock _ phis stmts (Just out)) = Block (M.map snd phis) (reverse stmts) out
+qBlockToBlock (QBlock _ _ _ Nothing) = error "impossible happened"
 
 
 validateEscapes :: QCode -> ValM ()

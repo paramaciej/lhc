@@ -1,13 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 module Quattro.Alive where
 
+import Quattro.Types
+
 import Control.Lens
 import Control.Monad.State
-import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
-
-import Quattro.Types
 
 
 clearProgram :: ProgramCode -> ClearProgram
@@ -51,7 +50,7 @@ clearFunction fCode = do
         movs = map (\(dest, source) -> Mov dest (Location source)) phiToDo
 
     mergeableBlocks :: M.Map Label ClearBlock -> S.Set Label
-    mergeableBlocks mp = S.fromList $ map fst $ filter (\(label, qty) -> qty == 1) $ M.toList $ foldr aux (M.fromList (map (\x -> (x, 0)) $ M.keys mp)) $ M.elems mp
+    mergeableBlocks mp = S.fromList $ map fst $ filter (\(_, qty) -> qty == 1) $ M.toList $ foldr aux (M.fromList (map (\x -> (x, 0)) $ M.keys mp)) $ M.elems mp
       where
         aux (ClearBlock _ out) acc = case out of
             Ret _ -> acc
@@ -66,7 +65,7 @@ clearFunction fCode = do
         aux label block acc = if label `S.member` mergeable
             then acc
             else M.insert label (merged label block) acc
-        merged label block@(ClearBlock stmts out) = case out of
+        merged _ block@(ClearBlock stmts out) = case out of
             Goto nextLabel -> if nextLabel `S.member` mergeable
                 then let ClearBlock mStmts mOut = merged nextLabel (mp M.! nextLabel) in ClearBlock (stmts ++ mStmts) mOut
                 else block
@@ -81,7 +80,7 @@ calculateInSets (ClearFunction _ blockMap) = findFixPoint
     initial = M.map (const S.empty) blockMap
 
     findFixPoint :: M.Map Label AliveSet
-    findFixPoint = snd $ until (uncurry (==)) (\(prev, current) -> (current, nextPoint current)) (initial, nextPoint initial)
+    findFixPoint = snd $ until (uncurry (==)) (\(_, current) -> (current, nextPoint current)) (initial, nextPoint initial)
 
     nextPoint :: M.Map Label AliveSet -> M.Map Label AliveSet
     nextPoint prevSolution = M.map (blockMod prevSolution) blockMap

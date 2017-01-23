@@ -2,15 +2,15 @@
 
 module Utils.Abstract where
 
-import qualified AbsLatte as L
 import Utils.Position
 
-import System.Console.ANSI
-import Control.Lens hiding (Empty)
-import Data.Maybe
-import Data.List
 import Utils.Show
 import Utils.Verbose
+
+import Control.Lens hiding (Empty)
+import Data.List
+import Data.Maybe
+import System.Console.ANSI
 
 data AbsPos a = AbsPos
     { _pos :: Maybe Position

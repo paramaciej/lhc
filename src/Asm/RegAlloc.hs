@@ -2,8 +2,8 @@
 {-# LANGUAGE LambdaCase #-}
 module Asm.RegAlloc where
 
-import qualified Quattro.Types as Q
 import Quattro.Alive
+import qualified Quattro.Types as Q
 import Utils.Abstract (ARelOp(LTH, LEQ, GTH, GEQ, EQU, NEQ))
 import Utils.Verbose
 
@@ -11,7 +11,7 @@ import Control.Lens
 import Control.Monad.State
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Text.Printf
+
 
 data Register = Register
     { _registerType :: RegType
@@ -134,8 +134,8 @@ initialAllocSt :: Q.AliveSet -> AllocSt
 initialAllocSt inSet = AllocSt (M.fromList $ zip (S.toList inSet) (map (S.singleton . Stack) [0..])) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) []
 
 
-stmtsWithAlive :: M.Map Q.Label Q.AliveSet -> Q.ClearFunction -> Q.ClearBlock -> [StmtWithAlive]
-stmtsWithAlive inSets (Q.ClearFunction _ blockMap) block = foldr aux [] stmts
+stmtsWithAlive :: M.Map Q.Label Q.AliveSet -> Q.ClearBlock -> [StmtWithAlive]
+stmtsWithAlive inSets block = foldr aux [] stmts
   where
     Q.ClearBlock stmts out = block
     outSet = setFromOut inSets out

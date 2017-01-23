@@ -4,21 +4,18 @@
 module Utils.Types where
 
 import Utils.Abstract
+import Utils.Eval
 import Utils.Position
 import Utils.Show
 import Utils.Verbose
-import Utils.Eval
-
-import System.Console.ANSI
-
-import qualified Data.Map as M
-import Data.Maybe
-import Data.List
-
-import Control.Monad.Except
-import Control.Monad.State
 
 import Control.Lens hiding (Empty)
+import Control.Monad.Except
+import Control.Monad.State
+import Data.List
+import qualified Data.Map as M
+import Data.Maybe
+
 
 type SymbolsSt = M.Map Ident SymbolInfo
 type CheckSt = ExceptT String (StateT InfoSt CompilerOptsM)
@@ -110,8 +107,6 @@ checkFunction topDef = do
 
 checkBlock :: Type -> Block -> CheckSt ()
 checkBlock returnType block = do
-    ss <- use symbols
---     lift $ lift $ verbosePrint $ "Checking block:\n" ++ show block ++ "it has defined:\n" ++ unlines (map show (M.elems ss))
     mapM_ checkStmt $ block ^. aa . blockStmts
     modify $ over symbols $ M.mapMaybe $ \symbolInfo -> if symbolInfo ^. defInBlock == InBlock block
         then symbolInfo ^. prevDef
@@ -152,8 +147,8 @@ checkBlock returnType block = do
 getExprType :: Expr -> CheckSt Type
 getExprType expr = case expr ^. aa of
     EVar ident -> getIdentType ident
-    ELitInt integer -> return $ makeAbs Int
-    ELitBool bool -> return $ makeAbs Bool
+    ELitInt _ -> return $ makeAbs Int
+    ELitBool _ -> return $ makeAbs Bool
     EApp ident exprs -> do
         types <- mapM getExprType exprs
         funcType <- getIdentType ident
@@ -161,7 +156,7 @@ getExprType expr = case expr ^. aa of
             Just t -> return t
             Nothing -> contextError expr ("Application function of type " ++ absShow funcType
                 ++ " to arguments of types: " ++ intercalate ", " (map absShow types) ++ " failed!") >>= throwError
-    EString string -> return (makeAbs Str)
+    EString _ -> return (makeAbs Str)
     Neg e -> constrainExprType (makeAbs Int) e >> return (makeAbs Int)
     Not e -> constrainExprType (makeAbs Bool) e >> return (makeAbs Bool)
     EMul e1 _ e2 -> binOpType Int Int e1 e2
