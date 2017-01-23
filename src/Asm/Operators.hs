@@ -119,14 +119,14 @@ genCall _ funName args = do
     mapM_ callerSave $ [RAX, R10, R11] ++ restRegisters -- save caller-save registers -- TODO CALLERsave regs! uzupałenić
     mapM_ safeMoveToReg $ zip (take 6 args) argRegisters -- move arguments to registers
 
-    when (length args > 6 && odd (length args)) $ asmStmts %= (++ [Custom "  subq \t$8, %rsp"])
+    when (length args > 6 && odd (length args)) $ asmStmts %= (++ [Custom $ align "subq" ++ "$8, %rsp"])
     forM_ (reverse $ drop 6 args) $ \arg -> do
         val <- fastestReadVal arg
         asmStmts %= (++ [Push val])
     asmStmts %= (++ [Call funName])
 
     let rspAdd = (length args - 6 + 1) `div` 2 * 16
-    when (rspAdd > 0) $ asmStmts %= (++ [Custom $ "  addq \t$" ++ show rspAdd ++ ", %rsp"])
+    when (rspAdd > 0) $ asmStmts %= (++ [Custom $ align "addq" ++ "$" ++ show rspAdd ++ ", %rsp"])
   where
     callerSave reg = use (registers . at reg) >>= \case
         Just (Just addr) -> moveToStackAndForget addr

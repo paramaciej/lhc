@@ -66,7 +66,7 @@ instance ToAbstract L.Expr AExpr where
     _to (L.ELitTrue _) = ELitBool True
     _to (L.ELitFalse _) = ELitBool False
     _to (L.EApp i _ exprs _) = EApp (toA i) (map toA exprs)
-    _to (L.EString (L.PString (_, str))) = EString str
+    _to (L.EString (L.PString (_, str))) = EString $ Just str
     _to (L.Neg _ e) = Neg (toA e)
     _to (L.Not _ e) = Not (toA e)
     _to (L.EMul e1 op e2) = EMul (toA e1) (toA op) (toA e2)

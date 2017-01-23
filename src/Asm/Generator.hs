@@ -25,9 +25,9 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do -- TODO dobra kol
     let (before, label:after) = break (== Label funName) allStmts
     return $ before ++
         [ label
-        , Custom "  push \t%rbp"
-        , Custom "  movq \t%rsp, %rbp"
-        ] ++ [Custom $ "  subq \t$" ++ show rspShift ++ ", %rsp" | rspShift > 0] ++ after
+        , Custom $ align "pushq" ++ "%rbp"
+        , Custom $ align "movq" ++ "%rsp, %rbp"
+        ] ++ [Custom $ align "subq" ++ "$" ++ show rspShift ++ ", %rsp" | rspShift > 0] ++ after
   where
     inSets = calculateInSets fun
     labelMod label = if label == entry then (True, funName) else (False, show (ALabel label))
@@ -40,7 +40,7 @@ genBlock fun ((isEntry, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts
     fromOut       <- execStateT (genAndAllocEscape newOut) (initialAllocSt outSet)
-    let ro = (M.elems . M.mapWithKey RoString) $ stackRestored ^. roStrings
+    let ro = [RoString 0 "\"\"" | stackRestored ^. roEmptyString] ++ (M.elems . M.mapWithKey RoString) (stackRestored ^. roStrings)
     let roMod = if null ro then id else ((SectionRoData : ro ++ [SectionText]) ++)
 
     return $ roMod $ Label label : stackRestored ^. asmStmts ++ fromOut ^. asmStmts
@@ -67,7 +67,7 @@ genAndAllocStmt stmtWithAlive = do
                 let reg = argRegs `genericIndex` nr
                 registers . at reg .= Just (Just addr)
                 stack . at addr .= Just (S.singleton (RegisterLoc $ addressMatchRegister reg addr))
-            else stack . at addr .= Just (S.singleton (Stack (3 - nr))) -- we want to refer stack above RBP
+            else stack . at addr .= Just (S.singleton (Stack (addr ^. Q.addressType) (3 - nr))) -- we want to refer stack above RBP
         Q.BinStmt addr op val1 val2 -> case op of
             Q.Add -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
             Q.Sub -> genBinOp Sub (stmtWithAlive ^. after) addr val1 val2
@@ -82,10 +82,17 @@ genAndAllocStmt stmtWithAlive = do
                 registers . at RAX .= Just (Just addr)
                 stack . at addr .= Just (S.singleton $ RegisterLoc $ addressMatchRegister RAX addr)
         Q.StringLit addr string -> do
-            strNumber <- toInteger . length <$> use roStrings
-            roStrings %= M.insert strNumber string
             loc <- fastestReadLoc addr
-            asmStmts %= (++ [Mov (StrLiteral strNumber) loc])
+            nr <- case string of
+                Nothing -> do
+                    already <- use roEmptyString
+                    unless already $ roEmptyString .= True
+                    return 0
+                Just str -> do
+                    strNumber <- (+1) . toInteger . length <$> use roStrings
+                    roStrings %= M.insert strNumber str
+                    return strNumber
+            asmStmts %= (++ [Mov (StrLiteral nr) loc])
     killDead stmtWithAlive
     showStmtGeneratedCode stmtWithAlive
     unlines .map show . drop prevStmts <$> use asmStmts >>= \case

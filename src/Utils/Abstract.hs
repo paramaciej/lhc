@@ -152,7 +152,7 @@ data AExpr
     | ELitInt Integer
     | ELitBool Bool
     | EApp Ident [Expr]
-    | EString String
+    | EString (Maybe String)
     | Neg Expr
     | Not Expr
     | EMul Expr MulOp Expr
@@ -167,7 +167,7 @@ instance Show AExpr where
     show (ELitInt int) = colorize [SetColor Foreground Dull Blue] $ show int
     show (ELitBool bool) = colorize [SetColor Foreground Dull Cyan] $ if bool then "true" else "false"
     show (EApp ident args) = absShow ident ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
-    show (EString str) = colorize [SetColor Foreground Dull Magenta] str
+    show (EString str) = colorize [SetColor Foreground Dull Magenta] (fromMaybe "<EMPTY STRING>" str)
     show (Neg expr) = "-" ++ absShow expr
     show (Not expr) = "!" ++ absShow expr
     show (EMul e1 op e2) = absShow e1 ++ " " ++ absShow op ++ " " ++ absShow e2

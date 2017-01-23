@@ -53,7 +53,7 @@ atLeastOneRegFromValues qVal1 qVal2 = do
             loc2 <- valAsLocation qVal2
             return (val1, loc2)
         Q.Location addr -> case val1 of
-            Location (Stack _) -> do
+            Location (Stack _ _) -> do
                 newLoc <- movAddrToRegister addr
                 return (val1, newLoc)
             _ -> do
@@ -66,9 +66,9 @@ atLeastOneReg addr1 addr2 = do
     (Location loc2)      <- fastestReadVal (Q.Location addr2)
     case (loc1, loc2) of
         (RegisterLoc _, RegisterLoc _) -> return (val1, loc2)
-        (RegisterLoc _, Stack _) -> return (val1, loc2)
-        (Stack _, RegisterLoc _) -> return (val1, loc2)
-        (Stack _, Stack _ ) -> do
+        (RegisterLoc _, Stack _ _) -> return (val1, loc2)
+        (Stack _ _, RegisterLoc _) -> return (val1, loc2)
+        (Stack _ _, Stack _ _) -> do
             newLoc <- movAddrToRegister addr2
             return (val1, newLoc)
 
@@ -85,7 +85,7 @@ movAddrToRegister addr = do
     initialVal@(Location loc) <- fastestReadVal (Q.Location addr)
     case loc of
         RegisterLoc _ -> return loc
-        Stack _ -> do
+        Stack _ _ -> do
             free <- getFreeRegister
             let newLoc = RegisterLoc $ addressMatchRegister free addr
             asmStmts %= (++ [Mov initialVal newLoc])
@@ -106,20 +106,19 @@ getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
                 registers . at reg .= Just Nothing
                 return reg
             [] -> do
-                stackLoc <- getFreeStack
+                oldAddr <- fromJust . fromJust <$> use (registers . at RDX)
+                stackLoc <- getFreeStack (oldAddr ^. Q.addressType)
                 source@(Location regLoc) <- fromJust <$> valueFromReg RDX
                 asmStmts %= (++ [Mov source stackLoc])
-
-                oldAddr <- fromJust . fromJust <$> use (registers . at RDX)
                 stack . at oldAddr . _Just %= S.delete regLoc . S.insert stackLoc
                 registers . at RDX .= Just Nothing
                 return RDX
 
-getFreeStack :: AllocM RealLoc
-getFreeStack = do
+getFreeStack :: RegType -> AllocM RealLoc
+getFreeStack typ = do
     allLocs <- (S.unions . M.elems) <$> use stack
-    let stackLocks = S.map (\(Stack x) -> x) $ S.filter (not . isRegLoc) allLocs
-    return $ Stack $ if S.null stackLocks
+    let stackLocks = S.map (\(Stack _ x) -> x) $ S.filter (not . isRegLoc) allLocs
+    return $ Stack typ $ if S.null stackLocks
         then 0
         else S.findMin $ S.fromList [0..(S.findMax stackLocks + 1)] S.\\ stackLocks
 
@@ -152,7 +151,8 @@ fixStack alive = do
     fix :: StackFixStmt -> AllocM ()
     fix (addr, from, to) = do
         let rax = RegisterLoc $ addressMatchRegister RAX addr
-        asmStmts %= (++ [Mov (Location (Stack from)) rax, Mov (Location rax) (Stack to)])
+        let t = addr ^. Q.addressType
+        asmStmts %= (++ [Mov (Location (Stack t from)) rax, Mov (Location rax) (Stack t to)])
 
 movValToAddrLocatedIn :: Q.Value -> Q.Address -> S.Set RealLoc -> AllocM ()
 movValToAddrLocatedIn val addr realLocs = do
@@ -173,15 +173,15 @@ restoreStack alive = do
     ss <- use stack
     let graph = M.fromList $ zip [0..] $ map (getStackFromAddr ss) (S.elems alive)
     let addrMap = M.fromList $ zip [0..] (S.elems alive)
-    let movStToReg st reg = Mov (Location $ Stack st) (RegisterLoc $ addressMatchRegister reg (addrMap M.! st))
-    let movRegToSt reg st = Mov (Location $ RegisterLoc $ addressMatchRegister reg (addrMap M.! st)) (Stack st)
+    let movStToReg st reg = Mov (Location $ Stack ((addrMap M.! st) ^. Q.addressType) st) (RegisterLoc $ addressMatchRegister reg (addrMap M.! st))
+    let movRegToSt reg st = Mov (Location $ RegisterLoc $ addressMatchRegister reg (addrMap M.! st)) (Stack ((addrMap M.! st) ^. Q.addressType) st)
 
     forM_ (getCycles graph) $ \cycle -> asmStmts %= (
         ++ [movStToReg (last cycle) RAX]
         ++ concatMap (\(from, to) -> [movStToReg from RDX, movRegToSt RDX to]) (reverse $ pairs cycle)
         ++ [movRegToSt RAX (head cycle)])
   where
-    getStackFromAddr ss = (\(Stack x) -> x) . S.findMin . S.filter (not . isRegLoc) . fromJust . (`M.lookup` ss)
+    getStackFromAddr ss = (\(Stack _ x) -> x) . S.findMin . S.filter (not . isRegLoc) . fromJust . (`M.lookup` ss)
     getCycles graph = filter ((>1) . length) $ snd $ M.foldrWithKey aux (graph, []) graph
     aux before _ (graph, cycles) = if before `M.member` graph
         then let (newGraph, path) = run before (graph, []) in (newGraph, path:cycles)
@@ -199,8 +199,9 @@ moveToStackAndForget addr = do
     case S.elems stackLocs of
         loc:_ -> stack . at addr .= Just (S.singleton loc)
         [] -> do
-            stackLoc <- getFreeStack
-            asmStmts %= (++ [Mov (Location (S.findMin regLocs)) stackLoc])
+            let minRegLoc@(RegisterLoc (Register typ _)) = S.findMin regLocs
+            stackLoc <- getFreeStack typ
+            asmStmts %= (++ [Mov (Location minRegLoc) stackLoc])
             stack . at addr .= Just (S.singleton stackLoc)
     let regs = S.map (\(RegisterLoc (Register _ reg)) -> reg) regLocs
     registers %= M.mapWithKey (\r a -> if r `S.member` regs then Nothing else a)
@@ -229,23 +230,23 @@ localsUsed stmts = if S.null locals then 0 else S.findMax locals + 1
         BinStmt _ val loc -> fromVal val . fromLoc loc
         CondMov _ loc1 loc2 -> fromLoc loc1 . fromLoc loc2
         _ -> id
-    fromVal (IntLiteral _) = id
-    fromVal (StrLiteral _) = id
-    fromVal (Location loc) = fromLoc loc
+    fromVal (IntLiteral _)  = id
+    fromVal (StrLiteral _)  = id
+    fromVal (Location loc)  = fromLoc loc
     fromLoc (RegisterLoc _) = id
-    fromLoc (Stack i) = S.insert i
+    fromLoc (Stack _ i)     = S.insert i
 
 registersAndStackInfo :: AllocM String
 registersAndStackInfo = do
     regs <- M.elems <$> use registers
     ss <- M.assocs <$> use stack
     let regInfo = intercalate "|" $ map (maybe " - " (printf "%3d" . (^. Q.addressLoc))) regs
-    let stackInfo = intercalate " | " $ map addrInfo ss
-    return $ regInfo ++ red " || " ++ stackInfo
+    let stackInfo = intercalate " |" $ map addrInfo ss
+    return $ regInfo ++ red "|" ++ stackInfo
   where
     addrInfo (addr, set) = yellow (printf "%3d" $ addr ^. Q.addressLoc) ++ ": " ++ intercalate ", " (map showRealLoc $ S.elems set)
     showRealLoc (RegisterLoc r) = show r
-    showRealLoc (Stack i)       = printf "%4s" $ "St" ++ show i
+    showRealLoc (Stack _ i)     = printf "%4s" $ "St" ++ show i
 
 
 showRegistersAndStack :: AllocM ()
@@ -255,4 +256,4 @@ showStmtGeneratedCode :: StmtWithAlive -> AllocM ()
 showStmtGeneratedCode stmtWithAlive = do
     let s = show (stmtWithAlive ^. stmt) ++ setCursorColumnCode 30
     info <- registersAndStackInfo
-    lift $ verbosePrint $ s ++ red "|| " ++ info ++ red " || " ++ "alive: " ++ show (S.elems (stmtWithAlive ^. after))
+    lift $ verbosePrint $ s ++ red "|" ++ info ++ red " | " ++ "alive: " ++ show (S.elems (stmtWithAlive ^. after))

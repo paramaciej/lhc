@@ -12,6 +12,7 @@ import Control.Lens
 import Control.Monad.State
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Text.Printf
 
 
 data Register = Register
@@ -26,7 +27,7 @@ data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 |
 argRegs :: [Reg]
 argRegs = [RDI, RSI, RDX, RCX, R8, R9]
 
-data RealLoc = RegisterLoc Register | Stack Integer
+data RealLoc = RegisterLoc Register | Stack RegType Integer
   deriving (Eq, Ord)
 
 data Value
@@ -77,6 +78,7 @@ data AsmStmt
 data AllocSt = AllocSt
     { _stack :: M.Map Q.Address (S.Set RealLoc)
     , _registers :: M.Map Reg (Maybe Q.Address)
+    , _roEmptyString :: Bool
     , _roStrings :: M.Map Integer String
     , _asmStmts :: [AsmStmt]
     } deriving Show
@@ -133,40 +135,55 @@ instance Show Register where
 
 instance Show RealLoc where
     show (RegisterLoc register) = show register
-    show (Stack pos)            = show ((-8) * (pos + 1)) ++ "(%rbp)"
+    show (Stack _ pos)          = show ((-8) * (pos + 1)) ++ "(%rbp)"
 
 instance Show AsmStmt where
     show (Globl str)    = ".globl " ++ str
     show (Label str)    = str ++ ":"
-    show (Mov v1 v2)    = "  mov  " ++ show v1 ++ ", " ++ show v2
-    show (Cmp v1 v2)    = "  cmp  " ++ show v1 ++ ", " ++ show v2
-    show (Jmp label)    = "  jmp  " ++ label
-    show (Jz  label)    = "  jz   " ++ label
-    show (Push val)     = "  push " ++ show val
-    show (Call fun)     = "  call " ++ fun
-    show LeaveRet       = "  leave\n  ret"
-    show (IMul v1 v2)   = "  imull " ++ show v1 ++ ", " ++ show v2
-    show (IDiv v1)      = "  idivl " ++ show v1
-    show CDQ            = "  cdq"
-    show (Xor v1 v2)    = "  xorl " ++ show v1 ++ ", " ++ show v2
-    show (Not v1)       = "  notl " ++ show v1
+    show (Mov v1 v2)    = sufFromVal v1 "mov" ++ show v1 ++ ", " ++ show v2
+    show (Cmp v1 v2)    = sufFromVal v1 "cmp" ++ show v1 ++ ", " ++ show v2
+    show (Jmp label)    = align "jmp" ++ label
+    show (Jz  label)    = align "jz" ++ label
+    show (Push val)     = sufFromVal val "push" ++ show val
+    show (Call fun)     = align "call" ++ fun
+    show LeaveRet       = align "leave" ++ "\n" ++ align "ret"
+    show (IMul v1 v2)   = sufFromVal v1 "imul" ++ show v1 ++ ", " ++ show v2
+    show (IDiv v1)      = sufFromVal (Location v1) "idiv" ++ show v1
+    show CDQ            = align "cdq"
+    show (Xor v1 v2)    = sufFromVal v1 "xor" ++ show v1 ++ ", " ++ show v2
+    show (Not v1)       = sufFromVal (Location v1) "not" ++ show v1
     show SectionRoData  = ".section .rodata"
     show SectionText    = ".section .text"
     show (RoString i s) = "_STRING_" ++ show i ++ ":\n  .string " ++ s
     show (Custom s)   = s
-    show (BinStmt op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
+    show (BinStmt op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
-        opShow Add = "addl "
-        opShow Sub = "subl "
-    show (CondMov op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
+        opShow = sufFromVal v1 $ case op of
+            Add -> "add"
+            Sub -> "sub"
+    show (CondMov op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
-        opShow = \case
-            LTH -> "cmovll"
-            LEQ -> "cmovlel"
-            GTH -> "cmovgl"
-            GEQ -> "cmovgel"
-            EQU -> "cmovel"
-            NEQ -> "cmovnel"
+        opShow = sufFromVal (Location v1) $ case op of
+            LTH -> "cmovl"
+            LEQ -> "cmovle"
+            GTH -> "cmovg"
+            GEQ -> "cmovge"
+            EQU -> "cmove"
+            NEQ -> "cmovne"
+
+valType :: Value -> RegType
+valType (Location (RegisterLoc (Register x _))) = x
+valType (Location (Stack x _ )) = x
+valType (IntLiteral _) = Int
+valType (StrLiteral _) = Ptr
+
+align :: String -> String
+align = printf "  %-6s "
+
+sufFromVal :: Value -> String -> String
+sufFromVal v op = align $ case valType v of
+    Int -> op ++ "l"
+    Ptr -> op ++ "q"
 
 
 makeLenses ''Register
@@ -179,7 +196,9 @@ isRegLoc (RegisterLoc _) = True
 isRegLoc _ = False
 
 initialAllocSt :: Q.AliveSet -> AllocSt
-initialAllocSt inSet = AllocSt (M.fromList $ zip (S.toList inSet) (map (S.singleton . Stack) [0..])) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) M.empty []
+initialAllocSt inSet = AllocSt (M.fromList $ zipWith aux (S.toList inSet) [0..]) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) False M.empty []
+  where
+    aux addr int = (addr, S.singleton $ Stack (addr ^. Q.addressType) int)
 
 
 stmtsWithAlive :: M.Map Q.Label Q.AliveSet -> Q.ClearBlock -> [StmtWithAlive]
@@ -206,7 +225,7 @@ fixStmts alive = do
   where
     singleMove :: (Q.Address, Integer) -> AllocM StackFixStmt
     singleMove (addr, idx) = use (stack . at addr) >>= \case
-        Just set -> case S.elems (S.map (\(Stack x) -> x) $ S.filter (not . isRegLoc) set) of
+        Just set -> case S.elems (S.map (\(Stack _ x) -> x) $ S.filter (not . isRegLoc) set) of
             pos:_ -> return (addr, pos, idx)
             [] -> error $ "LOC" ++ show addr ++ " IS NOWHERE IN STACK (AT THE TIME OF PROCESSING OUT STMT"
         Nothing -> error $ "LOC" ++ show addr ++ " IS NOWHERE (AT THE TIME OF PROCESSING OUT STMT"

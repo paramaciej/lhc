@@ -4,6 +4,7 @@ module Quattro.Types where
 import Control.Lens
 import Control.Monad.State
 import Data.List
+import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
 
@@ -28,7 +29,7 @@ data Stmt
     | CmpStmt Address RelOp Value Value
     | UniStmt Address UniOp Value
     | Call Address String [Value]
-    | StringLit Address String
+    | StringLit Address (Maybe String)
 
 data OutStmt
     = Goto Label
@@ -147,7 +148,7 @@ instance Show Stmt where
     show (CmpStmt a op v1 v2)   = show a ++ yellow " <- " ++ show v1 ++ " " ++ yellow (show op) ++ " " ++ show v2
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1
     show (Call a str vs)        = show a ++ yellow " <- call " ++ str ++ " (" ++ intercalate ", " (map show vs) ++ ")"
-    show (StringLit a str)      = show a ++ yellow " <- " ++ red str
+    show (StringLit a str)      = show a ++ yellow " <- " ++ red (fromMaybe "<EMPTY STRING>" str)
 
 
 instance Show OutStmt where

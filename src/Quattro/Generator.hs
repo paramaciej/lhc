@@ -45,7 +45,9 @@ genStmt block = A.ignorePos $ \case
     A.Empty -> return ()
     A.BStmt block -> genBlock block
     A.Decl typ items -> forM_ items $ A.ignorePos $ \case
-        A.NoInit ident -> declareWithType block ident typ
+        A.NoInit ident -> do
+            declareWithType block ident typ
+            genExpr (defaultValForType typ) >>= setLocal ident
         A.Init ident expr -> do
             declareWithType block ident typ
             genExpr expr >>= setLocal ident
@@ -319,5 +321,11 @@ getUniqueIdent = do
     newName <- (("TEMP_" ++) . unwords . map (^. A.aa . A.identString) . M.keys) <$> use locals
     return $ A.makeAbs (A.Ident newName)
 
+defaultValForType :: A.Type -> A.Expr
+defaultValForType = A.ignorePos $ \case
+    A.Int -> A.makeAbs (A.ELitInt 0)
+    A.Bool -> A.makeAbs (A.ELitBool False)
+    A.Str -> A.makeAbs (A.EString Nothing)
+    _ -> error "void/fun type hasn't got any default value!"
 
 qStmtGetter fun label = funCode . at fun . singular _Just . codeBlocks . at label . singular _Just
