@@ -65,6 +65,7 @@ genAndAllocStmt stmtWithAlive = do
             Q.Div -> genIDiv addr val1 val2
             Q.Mod -> genIMod addr val1 val2
         Q.CmpStmt addr op val1 val2 -> genCmp op addr val2 val1 -- TODO zamieniona kolejność arg, czy dobrze?
+        Q.UniStmt addr op value -> genUni op addr value
         Q.Call addr funName args -> do
             genCall addr funName args
 --             when (addrStayAlive addr $ stmtWithAlive ^. after) $ TODO conditional EAX/RAX -> addr

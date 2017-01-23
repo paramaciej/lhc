@@ -102,6 +102,17 @@ genCmp op addr val1 val2 = do
     let litLoc = RegisterLoc $ valueMatchRegister free (Q.Literal 1)
     asmStmts %= (++ [Mov (Literal 1) litLoc, CondMov op litLoc dest])
 
+genUni :: Q.UniOp -> Q.Address -> Q.Value -> AllocM ()
+genUni op addr value = case op of
+    Q.Not -> do
+        v <- fastestReadVal value
+        loc <- fastestReadLoc addr
+        asmStmts %= (++ [Mov v loc, Xor (Literal 1) loc])
+    Q.Neg -> do
+        v <- fastestReadVal value
+        loc <- fastestReadLoc addr
+        asmStmts %= (++ [Mov v loc, Not loc, BinStmt Add (Literal 1) loc])
+
 genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
 genCall _ funName args = do
     let (argRegisters, restRegisters) = splitAt (length args) [RDI, RSI, RDX] -- TODO add 6 arg registers!

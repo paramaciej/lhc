@@ -13,7 +13,7 @@ import Utils.Types
 import Utils.Verbose
 
 
-data BinOp = Add | Sub | Mul | Div | Mod | Or | And
+data BinOp = Add | Sub | Mul | Div | Mod
   deriving (Show, Eq)
 
 data UniOp = Neg | Not

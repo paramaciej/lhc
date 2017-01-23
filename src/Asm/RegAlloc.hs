@@ -52,6 +52,8 @@ data AsmStmt
     | IMul Value Register
     | IDiv RealLoc
     | CDQ
+    | Xor Value RealLoc
+    | Not RealLoc
     | CondMov Q.RelOp RealLoc RealLoc
     | Jmp String
     | Jz String
@@ -113,6 +115,8 @@ instance Show AsmStmt where
     show (IMul v1 v2) = "  imull " ++ show v1 ++ ", " ++ show v2
     show (IDiv v1)    = "  idivl " ++ show v1
     show CDQ          = "  cdq"
+    show (Xor v1 v2)  = "  xorl " ++ show v1 ++ ", " ++ show v2
+    show (Not v1)     = "  notl " ++ show v1
     show (Custom s)   = s
     show (BinStmt op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
       where
