@@ -48,10 +48,3 @@ executable latc
                         process
   hs-source-dirs:       src
   default-language:     Haskell2010
-
-executable latc_x86
-  main-is:              MainX86.hs
-  ghc-options:          -main-is MainX86
-  build-depends:        base >= 4.7 && < 5
-  hs-source-dirs:       src
-  default-language:     Haskell2010
