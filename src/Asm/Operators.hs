@@ -38,7 +38,7 @@ genBinOp = \case
 genBinOpWithReplacement :: Q.Address -> Q.Value -> Q.Address -> OrdinaryOp -> AllocM ()
 genBinOpWithReplacement newAddr (Q.Location argAddr) destAddr op = do
     (vArg, lDest) <- atLeastOneReg argAddr destAddr
-    asmStmts %= (++ [BinStmt op vArg lDest]) -- TODO czemu??? chyba jest ok
+    asmStmts %= (++ [BinStmt op vArg lDest])
     replaceAddr destAddr newAddr
 genBinOpWithReplacement newAddr (Q.Literal literal) destAddr op = do
     let vArg = IntLiteral literal
@@ -115,9 +115,8 @@ genUni op addr value = case op of
 
 genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
 genCall _ funName args = do
-    let (argRegisters, restRegisters) = splitAt (length args) argRegs
-    mapM_ callerSave $ [RAX, R10, R11] ++ restRegisters -- save caller-save registers -- TODO CALLERsave regs! uzupałenić
-    mapM_ safeMoveToReg $ zip (take 6 args) argRegisters -- move arguments to registers
+    mapM_ callerSave $ [RAX, R10, R11] ++ argRegs   -- save caller-save registers -- TODO CALLERsave regs! uzupałenić
+    mapM_ safeMoveToReg $ zip (take 6 args) argRegs -- move arguments to registers
 
     when (length args > 6 && odd (length args)) $ asmStmts %= (++ [Custom $ align "subq" ++ "$8, %rsp"])
     forM_ (reverse $ drop 6 args) $ \arg -> do

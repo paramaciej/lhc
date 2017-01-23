@@ -46,11 +46,13 @@ genStmt block = A.ignorePos $ \case
     A.BStmt block -> genBlock block
     A.Decl typ items -> forM_ items $ A.ignorePos $ \case
         A.NoInit ident -> do
+            val <- genExpr (defaultValForType typ)
             declareWithType block ident typ
-            genExpr (defaultValForType typ) >>= setLocal ident
+            setLocal ident val
         A.Init ident expr -> do
+            val <- genExpr expr
             declareWithType block ident typ
-            genExpr expr >>= setLocal ident
+            setLocal ident val
     A.Ass ident expr -> genExpr expr >>= setLocal ident
     A.Incr ident -> do
         loc <- getLocal ident

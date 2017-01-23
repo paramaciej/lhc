@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Utils.Verbose where
 
 import Control.Monad.Reader
@@ -10,7 +11,7 @@ data CompilerOpts = CompilerOpts
 
 type CompilerOptsM = ReaderT CompilerOpts IO
 
-verbosePrint :: String -> CompilerOptsM ()
+verbosePrint :: (MonadIO m, MonadReader CompilerOpts m) => String -> m ()
 verbosePrint str = asks verbose >>= \case
         True -> liftIO $ putStrLn str
         False -> return ()

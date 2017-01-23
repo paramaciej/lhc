@@ -250,10 +250,10 @@ registersAndStackInfo = do
 
 
 showRegistersAndStack :: AllocM ()
-showRegistersAndStack = registersAndStackInfo >>= lift . verbosePrint
+showRegistersAndStack = registersAndStackInfo >>= verbosePrint
 
 showStmtGeneratedCode :: StmtWithAlive -> AllocM ()
 showStmtGeneratedCode stmtWithAlive = do
     let s = show (stmtWithAlive ^. stmt) ++ setCursorColumnCode 30
     info <- registersAndStackInfo
-    lift $ verbosePrint $ s ++ red "|" ++ info ++ red " | " ++ "alive: " ++ show (S.elems (stmtWithAlive ^. after))
+    verbosePrint $ s ++ red "|" ++ info ++ red " | " ++ "alive: " ++ show (S.elems (stmtWithAlive ^. after))

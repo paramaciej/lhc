@@ -16,10 +16,14 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 genAsm :: Q.ClearProgram -> CompilerOptsM [AsmStmt]
-genAsm (Q.ClearProgram functions) = concat <$> mapM genFunction (M.toAscList functions)
+genAsm (Q.ClearProgram functions) = do
+    (asm, roData) <- runStateT (concat <$> mapM genFunction (M.toAscList functions)) (RoDataSt False M.empty)
+    let ro = [RoString 0 "\"\"" | roData ^. roEmptyString] ++ (M.elems . M.mapWithKey RoString) (roData ^. roStrings)
+    let roMod = if null ro then id else ((SectionRoData : ro ++ [SectionText]) ++)
+    return $ roMod asm
 
-genFunction :: (String, Q.ClearFunction) -> CompilerOptsM [AsmStmt]
-genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do -- TODO dobra kolejność bloków!
+genFunction :: (String, Q.ClearFunction) -> RoDataM [AsmStmt]
+genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do
     allStmts <- cons (Globl funName) . concat <$> mapM (genBlock fun) (M.toAscList blocksWithStringLabels)
     let rspShift = (localsUsed allStmts + 1) `div` 2 * 16
     let (before, label:after) = break (== Label funName) allStmts
@@ -34,16 +38,14 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do -- TODO dobra kol
     blocksWithInSets = M.mapWithKey (\label block -> (block, inSets M.! label)) blocks
     blocksWithStringLabels = M.mapKeys labelMod blocksWithInSets
 
-genBlock :: Q.ClearFunction -> ((Bool, String), (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
+genBlock :: Q.ClearFunction -> ((Bool, String), (Q.ClearBlock, Q.AliveSet)) -> RoDataM [AsmStmt]
 genBlock fun ((isEntry, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
     verbosePrint $ green "\nBLOCK " ++ label
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts
     fromOut       <- execStateT (genAndAllocEscape newOut) (initialAllocSt outSet)
-    let ro = [RoString 0 "\"\"" | stackRestored ^. roEmptyString] ++ (M.elems . M.mapWithKey RoString) (stackRestored ^. roStrings)
-    let roMod = if null ro then id else ((SectionRoData : ro ++ [SectionText]) ++)
 
-    return $ roMod $ Label label : stackRestored ^. asmStmts ++ fromOut ^. asmStmts
+    return $ Label label : stackRestored ^. asmStmts ++ fromOut ^. asmStmts
   where
     inSets = calculateInSets fun
     outSet = setFromOut inSets out
@@ -69,35 +71,39 @@ genAndAllocStmt stmtWithAlive = do
                 stack . at addr .= Just (S.singleton (RegisterLoc $ addressMatchRegister reg addr))
             else stack . at addr .= Just (S.singleton (Stack (addr ^. Q.addressType) (3 - nr))) -- we want to refer stack above RBP
         Q.BinStmt addr op val1 val2 -> case op of
-            Q.Add -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
+            Q.Add -> case Q.valType val1 of
+                Q.Int -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
+                Q.Ptr -> call addr "_concatString" [val1, val2]
             Q.Sub -> genBinOp Sub (stmtWithAlive ^. after) addr val1 val2
             Q.Mul -> genIMul addr val1 val2
             Q.Div -> genIDiv addr val1 val2
             Q.Mod -> genIMod addr val1 val2
         Q.CmpStmt addr op val1 val2 -> genCmp op addr val2 val1
         Q.UniStmt addr op value -> genUni op addr value
-        Q.Call addr funName args -> do
-            genCall addr funName args
-            when (addrStayAlive addr $ stmtWithAlive ^. after) $ do
-                registers . at RAX .= Just (Just addr)
-                stack . at addr .= Just (S.singleton $ RegisterLoc $ addressMatchRegister RAX addr)
+        Q.Call addr funName args -> call addr funName args
         Q.StringLit addr string -> do
             loc <- fastestReadLoc addr
             nr <- case string of
                 Nothing -> do
-                    already <- use roEmptyString
-                    unless already $ roEmptyString .= True
+                    already <- lift $ use roEmptyString
+                    unless already $ lift $ roEmptyString .= True
                     return 0
                 Just str -> do
-                    strNumber <- (+1) . toInteger . length <$> use roStrings
-                    roStrings %= M.insert strNumber str
+                    strNumber <- (+1) . toInteger . length <$> lift (use roStrings)
+                    lift $ roStrings %= M.insert strNumber str
                     return strNumber
             asmStmts %= (++ [Mov (StrLiteral nr) loc])
     killDead stmtWithAlive
     showStmtGeneratedCode stmtWithAlive
-    unlines .map show . drop prevStmts <$> use asmStmts >>= \case
-        list@(_:_) -> lift $ verbosePrint $ init list
+    unlines . map show . drop prevStmts <$> use asmStmts >>= \case
+        list@(_:_) -> verbosePrint $ init list
         [] -> return ()
+  where
+    call addr funName args = do
+        genCall addr funName args
+        when (addrStayAlive addr $ stmtWithAlive ^. after) $ do
+            registers . at RAX .= Just (Just addr)
+            stack . at addr .= Just (S.singleton $ RegisterLoc $ addressMatchRegister RAX addr)
 
 genAndAllocEscape :: Out -> AllocM ()
 genAndAllocEscape (Goto next) = do

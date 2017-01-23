@@ -21,7 +21,7 @@ data Register = Register
     } deriving (Eq, Ord)
 
 
-data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 -- TODO czy na pewno nie chcę RSP i RBP?
+data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 argRegs :: [Reg]
@@ -78,17 +78,22 @@ data AsmStmt
 data AllocSt = AllocSt
     { _stack :: M.Map Q.Address (S.Set RealLoc)
     , _registers :: M.Map Reg (Maybe Q.Address)
-    , _roEmptyString :: Bool
-    , _roStrings :: M.Map Integer String
     , _asmStmts :: [AsmStmt]
     } deriving Show
+
+data RoDataSt = RoDataSt
+    { _roEmptyString :: Bool
+    , _roStrings :: M.Map Integer String
+    }
 
 data StmtWithAlive = StmtWithAlive
     { _stmt :: Q.Stmt
     , _after :: Q.AliveSet
     }
 
-type AllocM = StateT AllocSt CompilerOptsM
+type RoDataM = StateT RoDataSt CompilerOptsM
+
+type AllocM = StateT AllocSt RoDataM
 
 type StackFixStmt = (Q.Address, Integer, Integer)
 
@@ -188,6 +193,7 @@ sufFromVal v op = align $ case valType v of
 
 makeLenses ''Register
 makeLenses ''AllocSt
+makeLenses ''RoDataSt
 makeLenses ''StmtWithAlive
 makeLenses ''LabelWithAlive
 
@@ -196,7 +202,7 @@ isRegLoc (RegisterLoc _) = True
 isRegLoc _ = False
 
 initialAllocSt :: Q.AliveSet -> AllocSt
-initialAllocSt inSet = AllocSt (M.fromList $ zipWith aux (S.toList inSet) [0..]) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) False M.empty []
+initialAllocSt inSet = AllocSt (M.fromList $ zipWith aux (S.toList inSet) [0..]) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) []
   where
     aux addr int = (addr, S.singleton $ Stack (addr ^. Q.addressType) int)
 

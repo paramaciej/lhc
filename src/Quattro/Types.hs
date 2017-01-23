@@ -171,3 +171,7 @@ makeLenses ''QuattroSt
 makeLenses ''ProgramCode
 makeLenses ''FunctionCode
 makeLenses ''Block
+
+valType :: Value -> RegType
+valType (Location (Address _ x)) = x
+valType (Literal _) = Int
