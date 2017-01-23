@@ -21,7 +21,7 @@ data Register = Register
 data RegType = Ptr | Int
   deriving (Eq, Ord)
 
-data Reg = RAX | RSI | RDI -- TODO
+data Reg = RAX | RDX | RSI | RDI -- TODO
   deriving (Eq, Ord, Enum, Bounded)
 
 data RealLoc = RegisterLoc Register | Stack Integer
@@ -87,6 +87,7 @@ instance Show RegType where
 
 instance Show Reg where
     show RAX = "ax"
+    show RDX = "dx"
     show RSI = "si"
     show RDI = "di"
 

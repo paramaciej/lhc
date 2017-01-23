@@ -166,11 +166,30 @@ movValToAddrLocatedIn val addr realLocs = do
 
 restoreStack :: Q.AliveSet -> AllocM ()
 restoreStack alive = do
-    x <- getFreeRegister
-    lift $ verbosePrint $ yellow "RESTORE STACK"
-    mapM_ moveToStackAndForget $ S.elems alive -- TODO they can be in WRONG order!
-    showRegistersAndStack
-    return ()
+    mapM_ moveToStackAndForget $ S.elems alive
+
+    ss <- use stack
+    let graph = M.fromList $ zip [0..] $ map (getStackFromAddr ss) (S.elems alive)
+    let addrMap = M.fromList $ zip [0..] (S.elems alive)
+    let movStToReg st reg = Mov (Location $ Stack st) (RegisterLoc $ addressMatchRegister reg (addrMap M.! st))
+    let movRegToSt reg st = Mov (Location $ RegisterLoc $ addressMatchRegister reg (addrMap M.! st)) (Stack st)
+
+    forM_ (getCycles graph) $ \cycle -> asmStmts %= (
+        ++ [movStToReg (last cycle) RAX]
+        ++ concatMap (\(from, to) -> [movStToReg from RDX, movRegToSt RDX to]) (reverse $ pairs cycle)
+        ++ [movRegToSt RAX (head cycle)])
+  where
+    getStackFromAddr ss = (\(Stack x) -> x) . S.findMin . S.filter (not . isRegLoc) . fromJust . (`M.lookup` ss)
+    getCycles graph = filter ((>1) . length) $ snd $ M.foldrWithKey aux (graph, []) graph
+    aux before after (graph, cycles) = if before `M.member` graph
+        then let (newGraph, path) = run before (graph, []) in (newGraph, path:cycles)
+        else (graph, cycles)
+    run start (graph, path) = case start `M.lookup` graph of
+        Just next -> run next (M.delete start graph, start:path)
+        Nothing -> (graph, path)
+    pairs (x:y:ys) = (x,y) : pairs (y:ys)
+    pairs [_] = []
+    pairs [] = []
 
 moveToStackAndForget :: Q.Address -> AllocM ()
 moveToStackAndForget addr = do

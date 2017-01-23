@@ -66,8 +66,8 @@ genCmp op addr val1 val2 = do
 
 genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
 genCall addr funName args = do
-    let (argRegisters, restRegisters) = splitAt (length args) [RDI, RSI] -- TODO add 6 arg registers!
-    mapM_ callerSave $ [RAX, RSI, RDI] ++ restRegisters -- save caller-save registers
+    let (argRegisters, restRegisters) = splitAt (length args) [RDI, RSI, RDX] -- TODO add 6 arg registers!
+    mapM_ callerSave $ [RAX, RDX, RSI, RDI] ++ restRegisters -- save caller-save registers
     mapM_ safeMoveToReg $ zip (take 6 args) argRegisters -- move arguments to registers
     -- TODO (drop 6 args) -- na stack, oraz: wyrównanie stosu
     asmStmts %= (++ [Call funName])
