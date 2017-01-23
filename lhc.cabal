@@ -43,7 +43,9 @@ executable latc
                         mtl,
                         containers,
                         lens,
-                        ansi-terminal
+                        ansi-terminal,
+                        filepath,
+                        process
   hs-source-dirs:       src
   default-language:     Haskell2010
 

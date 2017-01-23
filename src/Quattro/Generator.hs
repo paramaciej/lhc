@@ -72,7 +72,7 @@ genStmt block = A.ignorePos $ \case
         trueBlock <- freshBlock
         nextBlock <- freshBlock
         quitBlock $ Goto condBlock
-        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch 0 trueBlock nextBlock
+        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch trueBlock nextBlock
         performOnBlock trueBlock $ genBlock ifTrue >> quitBlock (Goto nextBlock)
         setActiveBlock nextBlock
 
@@ -83,7 +83,7 @@ genStmt block = A.ignorePos $ \case
         falseBlock <- freshBlock
         nextBlock  <- freshBlock
         quitBlock $ Goto condBlock
-        performOnBlock condBlock  $ genExpr expr >>= quitBlock . Branch 0 trueBlock falseBlock
+        performOnBlock condBlock  $ genExpr expr >>= quitBlock . Branch trueBlock falseBlock
         performOnBlock trueBlock  $ genBlock ifTrue >> quitBlock (Goto nextBlock)
         performOnBlock falseBlock $ genBlock ifFalse >> quitBlock (Goto nextBlock)
         setActiveBlock nextBlock
@@ -94,7 +94,7 @@ genStmt block = A.ignorePos $ \case
         bodyBlock <- freshBlock
         nextBlock <- freshBlock
         quitBlock $ Goto condBlock
-        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch 0 bodyBlock nextBlock
+        performOnBlock condBlock $ genExpr expr >>= quitBlock . Branch bodyBlock nextBlock
         performOnBlock bodyBlock $ genBlock whileBlock >> quitBlock (Goto condBlock)
         setActiveBlock nextBlock
 
@@ -264,7 +264,7 @@ quitBlock oStmt = do
             qStmtGetter fun label . out .= Just oStmt
             case oStmt of
                 Goto destination -> appendEntryPoint label destination
-                Branch _ dest1 dest2 _ -> appendEntryPoint label dest1 >> appendEntryPoint label dest2
+                Branch dest1 dest2 _ -> appendEntryPoint label dest1 >> appendEntryPoint label dest2
                 _ -> return ()
         Just currentOut -> qStmtGetter fun label . out .= Just currentOut -- we leave previous escape statetment
 

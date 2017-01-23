@@ -29,14 +29,16 @@ data RealLoc = RegisterLoc Register | Stack Integer
 
 data Value = Location RealLoc | Literal Integer deriving Eq
 
+newtype ALabel = ALabel Q.Label
+
 data LabelWithAlive = LabelWithAlive
-    { _aliveLabel :: Q.Label
+    { _aliveLabel :: ALabel
     , _afterLabel :: Q.AliveSet
     } deriving Show
 
 data Out
     = Goto LabelWithAlive
-    | Branch Q.Label LabelWithAlive LabelWithAlive Q.Value
+    | Branch LabelWithAlive LabelWithAlive Q.Value
     | Ret Q.Value
     | VRet
 
@@ -68,6 +70,9 @@ data StmtWithAlive = StmtWithAlive
 type AllocM = StateT AllocSt CompilerOptsM
 
 type StackFixStmt = (Q.Address, Integer, Integer)
+
+instance Show ALabel where
+    show (ALabel int) = "_" ++ show int
 
 instance Show Value where
     show (Literal int) = "$" ++ show int
@@ -138,9 +143,9 @@ stmtsWithAlive inSets (Q.ClearFunction _ blockMap) block = foldr aux [] stmts
 
 outWithAlive :: M.Map Q.Label Q.AliveSet -> Q.OutStmt -> Out
 outWithAlive inSets = \case
-    Q.Goto nextBlock -> Goto (LabelWithAlive nextBlock (inSets M.! nextBlock))
-    Q.Branch fixLabel trueBlock falseBlock val ->
-        Branch fixLabel (LabelWithAlive trueBlock (inSets M.! trueBlock)) (LabelWithAlive falseBlock (inSets M.! falseBlock)) val
+    Q.Goto nextBlock -> Goto (LabelWithAlive (ALabel nextBlock) (inSets M.! nextBlock))
+    Q.Branch trueBlock falseBlock val ->
+        Branch (LabelWithAlive (ALabel trueBlock) (inSets M.! trueBlock)) (LabelWithAlive (ALabel falseBlock) (inSets M.! falseBlock)) val
     Q.Ret val -> Ret val
     Q.VRet -> VRet
 

@@ -24,23 +24,19 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do -- TODO dobra kol
     allStmts <- cons (Globl funName) . concat <$> mapM (genBlock fun) (M.toAscList blocksWithStringLabels)
     let rspShift = (localsUsed allStmts + 1) `div` 2 * 16
     let (before, label:after) = break (== Label funName) allStmts
-    verbosePrint $ show (before, label, after)
     return $ before ++
         [ label
         , Custom "  push \t%rbp"
         , Custom "  movq \t%rsp, %rbp"
-        ] ++ (if rspShift > 0
-            then [Custom $ "  subq \t$" ++ show rspShift ++ ", %rsp"]
-            else [])
-        ++ after
+        ] ++ [Custom $ "  subq \t$" ++ show rspShift ++ ", %rsp" | rspShift > 0] ++ after
   where
     inSets = calculateInSets fun
-    labelMod label = if label == entry then (False, funName) else (True, show label)
+    labelMod label = if label == entry then funName else show (ALabel label)
     blocksWithInSets = M.mapWithKey (\label block -> (block, inSets M.! label)) blocks
     blocksWithStringLabels = M.mapKeys labelMod blocksWithInSets
 
-genBlock :: Q.ClearFunction -> ((Bool, String), (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
-genBlock fun ((notEntry, label), (block@(Q.ClearBlock stmts out), thisInSet)) = do
+genBlock :: Q.ClearFunction -> (String, (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
+genBlock fun (label, (block@(Q.ClearBlock stmts out), thisInSet)) = do
     verbosePrint $ green "\nBLOCK " ++ label
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts
@@ -86,8 +82,8 @@ genAndAllocEscape :: Out -> AllocM ()
 genAndAllocEscape (Goto next) = do
     fixStack (next ^. afterLabel)
     asmStmts %= (++ [Jmp (show $ next ^. aliveLabel)])
-genAndAllocEscape (Branch fixLabel nextTrue nextFalse val) = do
-    let tmpLabel = show fixLabel
+genAndAllocEscape (Branch nextTrue nextFalse val) = do
+    let tmpLabel = "_FALSE" ++ show (nextFalse ^. aliveLabel)
     cmpArg <- valAsLocation val
     asmStmts %= (++ [Cmp (Literal 0) cmpArg, Jz tmpLabel])
     fixStack (nextTrue ^. afterLabel)

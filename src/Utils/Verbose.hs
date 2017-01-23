@@ -4,7 +4,7 @@ module Utils.Verbose where
 import Control.Monad.Reader
 
 data CompilerOpts = CompilerOpts
-    { sourceFilename :: String
+    { sourceFilename :: FilePath
     , verbose :: Bool
     }
 

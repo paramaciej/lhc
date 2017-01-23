@@ -31,7 +31,7 @@ data Stmt
 
 data OutStmt
     = Goto Label
-    | Branch Label Label Label Value
+    | Branch Label Label Value
     | Ret Value
     | VRet
 
@@ -138,7 +138,7 @@ instance Show Stmt where
 
 instance Show OutStmt where
     show (Goto label)         = green "goto " ++ show label
-    show (Branch _ l1 l2 val) = green "if " ++ show val ++ green " then goto " ++ show l1 ++ green " else " ++ show l2
+    show (Branch l1 l2 val) = green "if " ++ show val ++ green " then goto " ++ show l1 ++ green " else " ++ show l2
     show (Ret val)            = green "ret " ++ show val
     show VRet                 = green "ret"
 

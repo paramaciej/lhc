@@ -28,6 +28,8 @@ import Control.Monad.State
 import qualified Data.Map as M
 import Data.Maybe
 import System.Environment
+import System.FilePath.Posix
+import System.Process
 
 
 
@@ -59,8 +61,13 @@ main = getArgs >>= \case
                                 verbosePrint $ green "Cleared φ :\n" ++ show clear
                                 verbosePrint $ green "Alive sets:\n" ++ unlines (map (\(label, set) -> yellow (show label) ++ ": " ++ show set) $ M.toList inSets)
 
-                                asm <- genAsm clear
-                                liftIO $ putStrLn $ green "ASM\n" ++ unlines (map show asm)
+                                code <- unlines . map show <$> genAsm clear
+
+                                asmFile <- (`replaceExtension` "s") <$> asks sourceFilename
+                                lift $ writeFile asmFile code
+                                lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -o " ++ dropExtension asmFile
+                                return ()
+
 
                             Left err -> liftIO $ putStrLn err
                     Left err -> liftIO $ putStrLn err

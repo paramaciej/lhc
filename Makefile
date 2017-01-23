@@ -1,4 +1,7 @@
-all: latc
+all: runtime.o latc
+
+runtime.o:
+	cd lib && gcc -c runtime.c
 
 latc: bnfc
 	stack install
