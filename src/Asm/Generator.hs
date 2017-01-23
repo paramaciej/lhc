@@ -11,6 +11,7 @@ import Utils.Verbose
 
 import Control.Lens
 import Control.Monad.State
+import Data.List
 import qualified Data.Map as M
 import qualified Data.Set as S
 
@@ -29,12 +30,12 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do -- TODO dobra kol
         ] ++ [Custom $ "  subq \t$" ++ show rspShift ++ ", %rsp" | rspShift > 0] ++ after
   where
     inSets = calculateInSets fun
-    labelMod label = if label == entry then funName else show (ALabel label)
+    labelMod label = if label == entry then (True, funName) else (False, show (ALabel label))
     blocksWithInSets = M.mapWithKey (\label block -> (block, inSets M.! label)) blocks
     blocksWithStringLabels = M.mapKeys labelMod blocksWithInSets
 
-genBlock :: Q.ClearFunction -> (String, (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
-genBlock fun (label, (block@(Q.ClearBlock _ out), thisInSet)) = do
+genBlock :: Q.ClearFunction -> ((Bool, String), (Q.ClearBlock, Q.AliveSet)) -> CompilerOptsM [AsmStmt]
+genBlock fun ((isEntry, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
     verbosePrint $ green "\nBLOCK " ++ label
     fromStmts     <- execStateT (genAndAllocBlock withAlive) (initialAllocSt thisInSet)
     stackRestored <- execStateT (restoreStack outSet) fromStmts
@@ -58,22 +59,25 @@ genAndAllocStmt stmtWithAlive = do
             M.lookup addr <$> use stack >>= \case
                 Just realLocs -> movValToAddrLocatedIn val addr realLocs
                 Nothing -> movValToAddrLocatedIn val addr S.empty
+        Q.FunArg addr nr -> if nr < 6
+            then do
+                let reg = argRegs `genericIndex` nr
+                registers . at reg .= Just (Just addr)
+                stack . at addr .= Just (S.singleton (RegisterLoc $ addressMatchRegister reg addr))
+            else stack . at addr .= Just (S.singleton (Stack (3 - nr))) -- we want to refer stack above RBP
         Q.BinStmt addr op val1 val2 -> case op of
             Q.Add -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
             Q.Sub -> genBinOp Sub (stmtWithAlive ^. after) addr val1 val2
             Q.Mul -> genIMul addr val1 val2
             Q.Div -> genIDiv addr val1 val2
             Q.Mod -> genIMod addr val1 val2
-        Q.CmpStmt addr op val1 val2 -> genCmp op addr val2 val1 -- TODO zamieniona kolejność arg, czy dobrze?
+        Q.CmpStmt addr op val1 val2 -> genCmp op addr val2 val1
         Q.UniStmt addr op value -> genUni op addr value
         Q.Call addr funName args -> do
             genCall addr funName args
---             when (addrStayAlive addr $ stmtWithAlive ^. after) $ TODO conditional EAX/RAX -> addr
-
---             x <- get
---             lift $ verbosePrint $ "TEST:\n" ++ show x
-
-
+            when (addrStayAlive addr $ stmtWithAlive ^. after) $ do
+                registers . at RAX .= Just (Just addr)
+                stack . at addr .= Just (S.singleton $ RegisterLoc $ addressMatchRegister RAX addr)
 
         _ -> return () -- TODO TODO TODO !!!
     killDead stmtWithAlive

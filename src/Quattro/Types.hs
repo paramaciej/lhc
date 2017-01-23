@@ -22,7 +22,8 @@ data UniOp = Neg | Not
 type RelOp = A.ARelOp
 
 data Stmt
-    = Mov Address Value
+    = FunArg Address Integer
+    | Mov Address Value
     | BinStmt Address BinOp Value Value
     | CmpStmt Address RelOp Value Value
     | UniStmt Address UniOp Value
@@ -129,6 +130,7 @@ showAbsFunCode entry blocks = "( starts in LABEL " ++ show entry ++ " )\n\n" ++ 
 
 instance Show Stmt where
     show (Mov a v)              = show a ++ yellow " <- " ++ show v
+    show (FunArg a nr)          = show a ++ yellow " <- arg " ++ show nr
     show (BinStmt a op v1 v2)   = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1 ++ " " ++ show v2
     show (CmpStmt a op v1 v2)   = show a ++ yellow " <- " ++ show v1 ++ " " ++ yellow (show op) ++ " " ++ show v2
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1

@@ -115,11 +115,18 @@ genUni op addr value = case op of
 
 genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
 genCall _ funName args = do
-    let (argRegisters, restRegisters) = splitAt (length args) [RDI, RSI, RDX] -- TODO add 6 arg registers!
-    mapM_ callerSave $ [RAX, RDX, RSI, RDI] ++ restRegisters -- save caller-save registers
+    let (argRegisters, restRegisters) = splitAt (length args) argRegs
+    mapM_ callerSave $ [RAX, R10, R11] ++ restRegisters -- save caller-save registers -- TODO CALLERsave regs! uzupałenić
     mapM_ safeMoveToReg $ zip (take 6 args) argRegisters -- move arguments to registers
-    -- TODO (drop 6 args) -- na stack, oraz: wyrównanie stosu
+
+    when (length args > 6 && odd (length args)) $ asmStmts %= (++ [Custom "  subq \t$8, %rsp"])
+    forM_ (reverse $ drop 6 args) $ \arg -> do
+        val <- fastestReadVal arg
+        asmStmts %= (++ [Push val])
     asmStmts %= (++ [Call funName])
+
+    let rspAdd = (length args - 6 + 1) `div` 2 * 16
+    when (rspAdd > 0) $ asmStmts %= (++ [Custom $ "  addq \t$" ++ show rspAdd ++ ", %rsp"])
   where
     callerSave reg = use (registers . at reg) >>= \case
         Just (Just addr) -> moveToStackAndForget addr

@@ -21,8 +21,11 @@ data Register = Register
 data RegType = Ptr | Int
   deriving (Eq, Ord)
 
-data Reg = RAX | RDX | RSI | RDI -- TODO
-  deriving (Eq, Ord, Enum, Bounded)
+data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 -- TODO czy na pewno nie chcę RSP i RBP?
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+argRegs :: [Reg]
+argRegs = [RDI, RSI, RDX, RCX, R8, R9]
 
 data RealLoc = RegisterLoc Register | Stack Integer
   deriving (Eq, Ord)
@@ -57,6 +60,7 @@ data AsmStmt
     | CondMov Q.RelOp RealLoc RealLoc
     | Jmp String
     | Jz String
+    | Push Value
     | Call String
     | LeaveRet
     | Label String
@@ -87,17 +91,37 @@ instance Show Value where
     show (Location realLoc) = show realLoc
 
 instance Show Register where
-    show (Register typ reg) = "%" ++ show typ ++ show reg
-
-instance Show RegType where
-    show Ptr = "r"
-    show Int = "e"
-
-instance Show Reg where
-    show RAX = "ax"
-    show RDX = "dx"
-    show RSI = "si"
-    show RDI = "di"
+    show (Register typ reg) = "%" ++ case typ of
+        Ptr -> case reg of
+            RAX -> "rax"
+            RDX -> "rdx"
+            RBX -> "rbx"
+            RCX -> "rcx"
+            RSI -> "rsi"
+            RDI -> "rdi"
+            R8  -> "r8"
+            R9  -> "r9"
+            R10 -> "r10"
+            R11 -> "r11"
+            R12 -> "r12"
+            R13 -> "r13"
+            R14 -> "r14"
+            R15 -> "r15"
+        Int -> case reg of
+            RAX -> "eax"
+            RDX -> "edx"
+            RBX -> "ebx"
+            RCX -> "ecx"
+            RSI -> "esi"
+            RDI -> "edi"
+            R8  -> "r8d"
+            R9  -> "r9d"
+            R10 -> "r10d"
+            R11 -> "r11d"
+            R12 -> "r12d"
+            R13 -> "r13d"
+            R14 -> "r14d"
+            R15 -> "r15d"
 
 instance Show RealLoc where
     show (RegisterLoc register) = show register
@@ -110,6 +134,7 @@ instance Show AsmStmt where
     show (Cmp v1 v2)  = "  cmp  " ++ show v1 ++ ", " ++ show v2
     show (Jmp label)  = "  jmp  " ++ label
     show (Jz  label)  = "  jz   " ++ label
+    show (Push val)   = "  push " ++ show val
     show (Call fun)   = "  call " ++ fun
     show LeaveRet     = "  leave\n  ret"
     show (IMul v1 v2) = "  imull " ++ show v1 ++ ", " ++ show v2

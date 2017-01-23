@@ -20,7 +20,7 @@ genTopDef topDef = do
     let ident = topDef ^. A.aa . A.topDefIdent
 
     codeForFun ident
-    mapM_ (declare block) (topDef ^. A.aa . A.topDefArgs ^.. traverse . A.aa . A.argIdent) -- TODO
+    mapM_ (uncurry $ genFunArg block) (zip [0..] $ topDef ^. A.aa . A.topDefArgs ^.. traverse . A.aa . A.argIdent) -- TODO
 
     genBlock block
 
@@ -142,6 +142,14 @@ genExpr = A.ignorePos $ \case
 
 genMov :: Address -> Value -> GenM ()
 genMov to from = emitExpr $ Mov to from
+
+
+genFunArg :: A.Block -> Integer -> A.Ident -> GenM ()
+genFunArg block number ident = do
+    declare block ident
+    label <- use currentBlock
+    addr <- use $ locals . at ident . singular _Just . address . at label . singular _Just
+    emitExpr $ FunArg addr number
 
 
 genUniOp :: UniOp -> A.Expr -> GenM Value

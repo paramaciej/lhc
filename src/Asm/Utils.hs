@@ -237,7 +237,7 @@ registersAndStackInfo :: AllocM String
 registersAndStackInfo = do
     regs <- M.elems <$> use registers
     ss <- M.assocs <$> use stack
-    let regInfo = intercalate " | " $ map (maybe " - " (printf "%3d")) regs
+    let regInfo = intercalate "|" $ map (maybe " - " (printf "%3d")) regs
     let stackInfo = intercalate " | " $ map addrInfo ss
     return $ regInfo ++ red " || " ++ stackInfo
   where
