@@ -57,8 +57,13 @@ genAndAllocStmt stmtWithAlive = do
         Q.Mov addr val -> when (addrStayAlive addr $ stmtWithAlive ^. after) $ -- we do nothing when addr isn't alive after current statement
             M.lookup addr <$> use stack >>= \case
                 Just realLocs -> movValToAddrLocatedIn val addr realLocs
-                Nothing -> movValToAddrLocatedIn val addr S.empty -- TODO chyba ok, sprawdzić czt to działa
-        Q.BinStmt addr op val1 val2 -> genBinOp op (stmtWithAlive ^. after) addr val1 val2
+                Nothing -> movValToAddrLocatedIn val addr S.empty
+        Q.BinStmt addr op val1 val2 -> case op of
+            Q.Add -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
+            Q.Sub -> genBinOp Sub (stmtWithAlive ^. after) addr val1 val2
+            Q.Mul -> genIMul addr val1 val2
+            Q.Div -> genIDiv addr val1 val2
+            Q.Mod -> genIMod addr val1 val2
         Q.CmpStmt addr op val1 val2 -> genCmp op addr val2 val1 -- TODO zamieniona kolejność arg, czy dobrze?
         Q.Call addr funName args -> do
             genCall addr funName args

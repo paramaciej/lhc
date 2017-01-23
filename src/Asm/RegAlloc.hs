@@ -42,10 +42,16 @@ data Out
     | Ret Q.Value
     | VRet
 
+data OrdinaryOp = Add | Sub
+  deriving Eq
+
 data AsmStmt
     = Mov Value RealLoc
     | Cmp Value RealLoc
-    | BinStmt Q.BinOp Value RealLoc
+    | BinStmt OrdinaryOp Value RealLoc
+    | IMul Value Register
+    | IDiv RealLoc
+    | CDQ
     | CondMov Q.RelOp RealLoc RealLoc
     | Jmp String
     | Jz String
@@ -96,20 +102,22 @@ instance Show RealLoc where
     show (Stack pos)            = show ((-8) * (pos + 1)) ++ "(%rbp)"
 
 instance Show AsmStmt where
-    show (Globl str) = ".globl " ++ str
-    show (Label str) = str ++ ":"
-    show (Mov v1 v2) = "  mov  " ++ show v1 ++ ", " ++ show v2
-    show (Cmp v1 v2) = "  cmp  " ++ show v1 ++ ", " ++ show v2
-    show (Jmp label) = "  jmp  " ++ label
-    show (Jz  label) = "  jz   " ++ label
-    show (Call fun)  = "  call " ++ fun
-    show LeaveRet    = "  leave\n  ret"
-    show (Custom s)  = s
+    show (Globl str)  = ".globl " ++ str
+    show (Label str)  = str ++ ":"
+    show (Mov v1 v2)  = "  mov  " ++ show v1 ++ ", " ++ show v2
+    show (Cmp v1 v2)  = "  cmp  " ++ show v1 ++ ", " ++ show v2
+    show (Jmp label)  = "  jmp  " ++ label
+    show (Jz  label)  = "  jz   " ++ label
+    show (Call fun)   = "  call " ++ fun
+    show LeaveRet     = "  leave\n  ret"
+    show (IMul v1 v2) = "  imull " ++ show v1 ++ ", " ++ show v2
+    show (IDiv v1)    = "  idivl " ++ show v1
+    show CDQ          = "  cdq"
+    show (Custom s)   = s
     show (BinStmt op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
       where
-        opShow Q.Add = "add "
-        opShow Q.Sub = "sub "
-        opShow Q.Mul = "imul" -- TODO
+        opShow Add = "addl "
+        opShow Sub = "subl "
     show (CondMov op v1 v2) = "  " ++ opShow op ++ " " ++ show v1 ++ ", " ++ show v2
       where
         opShow = \case

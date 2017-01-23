@@ -106,13 +106,13 @@ getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
                 return reg
             [] -> do
                 stackLoc <- getFreeStack
-                source@(Location regLoc) <- fromJust <$> valueFromReg RAX
+                source@(Location regLoc) <- fromJust <$> valueFromReg RDX
                 asmStmts %= (++ [Mov source stackLoc])
 
-                oldAddr <- fromJust . fromJust <$> use (registers . at RAX)
+                oldAddr <- fromJust . fromJust <$> use (registers . at RDX)
                 stack . at oldAddr . _Just %= S.delete regLoc . S.insert stackLoc
-                registers . at RAX .= Just Nothing
-                return RAX
+                registers . at RDX .= Just Nothing
+                return RDX
 
 getFreeStack :: AllocM RealLoc
 getFreeStack = do
@@ -204,6 +204,11 @@ moveToStackAndForget addr = do
     let regs = S.map (\(RegisterLoc (Register _ reg)) -> reg) regLocs
     registers %= M.mapWithKey (\r a -> if r `S.member` regs then Nothing else a)
     return ()
+
+forceFreeReg :: Reg -> AllocM ()
+forceFreeReg reg = fromJust <$> use (registers . at reg) >>= \case
+    Just addr -> moveToStackAndForget addr
+    Nothing -> return ()
 
 killDead :: StmtWithAlive -> AllocM ()
 killDead stmtWithAlive = do

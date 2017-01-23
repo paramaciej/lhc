@@ -11,12 +11,10 @@ import Asm.RegAlloc
 import Asm.Utils
 
 
-genBinOp :: Q.BinOp -> Q.AliveSet -> Q.Address -> Q.Value -> Q.Value -> AllocM ()
+genBinOp :: OrdinaryOp -> Q.AliveSet -> Q.Address -> Q.Value -> Q.Value -> AllocM ()
 genBinOp = \case
-    Q.Add -> commutativeOp Q.Add
-    Q.Sub -> nonCommutativeOp Q.Sub
-    Q.Mul -> commutativeOp Q.Mul
-    _ -> (\_ _ _ _ -> return ())
+    Add -> commutativeOp Add
+    Sub -> nonCommutativeOp Sub
   where
     commutativeOp op aliveAfter addr val1 val2 = case (val1, val2) of
         (Q.Location addr1, Q.Location addr2)
@@ -37,7 +35,7 @@ genBinOp = \case
         _ -> genBinOpWithMov addr op src dst
 
 
-genBinOpWithReplacement :: Q.Address -> Q.Value -> Q.Address -> Q.BinOp -> AllocM ()
+genBinOpWithReplacement :: Q.Address -> Q.Value -> Q.Address -> OrdinaryOp -> AllocM ()
 genBinOpWithReplacement newAddr (Q.Location argAddr) destAddr op = do
     (vArg, lDest) <- atLeastOneReg argAddr destAddr
     asmStmts %= (++ [BinStmt op vArg lDest]) -- TODO czemu??? chyba jest ok
@@ -49,10 +47,50 @@ genBinOpWithReplacement newAddr (Q.Literal literal) destAddr op = do
     replaceAddr destAddr newAddr
 
 
-genBinOpWithMov :: Q.Address -> Q.BinOp -> Q.Value -> Q.Value -> AllocM ()
+genBinOpWithMov :: Q.Address -> OrdinaryOp -> Q.Value -> Q.Value -> AllocM ()
 genBinOpWithMov addr op val1 val2 = do
     movValToAddrLocatedIn val2 addr S.empty
     genBinOpWithReplacement addr val1 addr op
+
+
+genIMul :: Q.Address -> Q.Value -> Q.Value -> AllocM ()
+genIMul addr val1 val2 = do -- addr = val1 * val2
+    v1 <- fastestReadVal val1
+    v2 <- fastestReadVal val2
+    dstReg <- getFreeRegister
+    let dstRegister = valueMatchRegister dstReg val1
+    asmStmts %= (++ [Mov v1 (RegisterLoc dstRegister), IMul v2 dstRegister])
+    registers . at dstReg .= Just (Just addr)
+    stack . at addr .= Just (S.singleton (RegisterLoc dstRegister))
+
+genIDiv :: Q.Address -> Q.Value -> Q.Value -> AllocM ()
+genIDiv addr val1 val2 = do -- addr = val1 / val2
+    forceFreeReg RAX
+    forceFreeReg RDX
+
+    let eaxLoc = RegisterLoc $ valueMatchRegister RAX val1
+    registers . at RAX .= Just (Just addr)
+    stack . at addr .= Just (S.singleton eaxLoc)
+
+    registers . at RDX .= Just (Just addr) -- reserve EDX register
+    v1 <- fastestReadVal val1
+    l2 <- valAsLocation  val2
+    registers .at RDX .= Just Nothing -- free EDX register
+    asmStmts %= (++ [Mov v1 eaxLoc, CDQ, IDiv l2])
+
+genIMod :: Q.Address -> Q.Value -> Q.Value -> AllocM ()
+genIMod addr val1 val2 = do
+    forceFreeReg RAX
+    forceFreeReg RDX
+
+    registers . at RDX .= Just (Just addr)
+    stack . at addr .= Just (S.singleton (RegisterLoc $ valueMatchRegister RDX val1))
+
+    registers . at RAX .= Just (Just addr) -- reserve EAX register
+    v1 <- fastestReadVal val1
+    l2 <- valAsLocation  val2
+    registers . at RAX .= Just Nothing -- free EAX register
+    asmStmts %= (++ [Mov v1 (RegisterLoc $ valueMatchRegister RAX val1), CDQ, IDiv l2])
 
 genCmp :: Q.RelOp -> Q.Address -> Q.Value -> Q.Value -> AllocM ()
 genCmp op addr val1 val2 = do
