@@ -6,11 +6,29 @@ Program.   Program ::= [TopDef] ;
 
 FnDef.	   TopDef ::= Type PIdent PParBegin [Arg] PParEnd Block ;
 
+ClsDef.    TopDef ::= PClass PIdent ClassBody ;
+
+ClsDefExt. TopDef ::= PClass PIdent PExtends PIdent ClassBody ;
+
 separator nonempty TopDef "" ;
 
 Arg. 	   Arg ::= Type PIdent;
 
 separator  Arg "," ;
+
+-- classes ------------------------------------------------
+
+ClassBody. ClassBody ::= PCurlyBegin [ClassStmt] PCurlyEnd ;
+
+separator  ClassStmt "" ;
+
+Attr.      ClassStmt ::= Type [AttrItem] PSemicolon;
+
+AttrItem.  AttrItem ::= PIdent ;
+
+separator nonempty AttrItem "," ;
+
+Method.    ClassStmt ::= Type PIdent PParBegin [Arg] PParEnd Block ;
 
 -- statements ----------------------------------------------
 
@@ -134,6 +152,9 @@ comment    "//" ;
 comment    "/*" "*/" ;
 
 -- position token ------------------------------------------
+
+position token PClass {"class"};
+position token PExtends {"extends"};
 
 position token PInt {"int"};
 position token PStr {"string"};
