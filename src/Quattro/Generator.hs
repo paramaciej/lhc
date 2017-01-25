@@ -9,8 +9,6 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Map as M
-import Data.Maybe
-
 
 genProgram :: A.Program -> GenM ()
 genProgram program = mapM_ genTopDef (program ^. A.aa . A.programTopDefs)
@@ -330,4 +328,5 @@ defaultValForType = A.ignorePos $ \case
     A.Str -> A.makeAbs (A.EString Nothing)
     _ -> error "void/fun type hasn't got any default value!"
 
+qStmtGetter :: Functor f => A.Ident -> Label -> (QBlock -> f QBlock) -> QuattroSt -> f QuattroSt
 qStmtGetter fun label = funCode . at fun . singular _Just . codeBlocks . at label . singular _Just
