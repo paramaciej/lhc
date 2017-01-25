@@ -27,6 +27,9 @@ data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 |
 argRegs :: [Reg]
 argRegs = [RDI, RSI, RDX, RCX, R8, R9]
 
+calleeSaveRegs :: [Reg]
+calleeSaveRegs = [RBX, R12, R13, R14, R15]
+
 data RealLoc = RegisterLoc Register | Stack RegType Integer
   deriving (Eq, Ord)
 
@@ -65,6 +68,7 @@ data AsmStmt
     | Jmp String
     | Jz String
     | Push Value
+    | Pop RealLoc
     | Call String
     | LeaveRet
     | Label String
@@ -150,6 +154,7 @@ instance Show AsmStmt where
     show (Jmp label)    = align "jmp" ++ label
     show (Jz  label)    = align "jz" ++ label
     show (Push val)     = sufFromVal val "push" ++ show val
+    show (Pop loc)      = sufFromVal (Location loc) "pop" ++ show loc
     show (Call fun)     = align "call" ++ fun
     show LeaveRet       = align "leave" ++ "\n" ++ align "ret"
     show (IMul v1 v2)   = sufFromVal v1 "imul" ++ show v1 ++ ", " ++ show v2

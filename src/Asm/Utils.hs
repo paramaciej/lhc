@@ -223,18 +223,46 @@ killDead stmtWithAlive = do
 localsUsed :: [AsmStmt] -> Integer
 localsUsed stmts = if S.null locals then 0 else S.findMax locals + 1
   where
-    locals = foldr modifier S.empty stmts
-    modifier = \case
-        Mov val loc -> fromVal val . fromLoc loc
-        Cmp val loc -> fromVal val . fromLoc loc
-        BinStmt _ val loc -> fromVal val . fromLoc loc
-        CondMov _ loc1 loc2 -> fromLoc loc1 . fromLoc loc2
-        _ -> id
+    locals = foldr (stmtInfoExtractor fromVal fromLoc (const id)) S.empty stmts
     fromVal (IntLiteral _)  = id
     fromVal (StrLiteral _)  = id
     fromVal (Location loc)  = fromLoc loc
     fromLoc (RegisterLoc _) = id
     fromLoc (Stack _ i)     = S.insert i
+
+registersUsed :: [AsmStmt] -> S.Set Reg
+registersUsed = foldr (stmtInfoExtractor fromVal fromLoc fromReg) S.empty
+  where
+    fromVal (IntLiteral _)      = id
+    fromVal (StrLiteral _)      = id
+    fromVal (Location loc)      = fromLoc loc
+    fromLoc (RegisterLoc reg)   = fromReg reg
+    fromLoc (Stack _ _)         = id
+    fromReg (Register _ r)      = S.insert r
+
+stmtInfoExtractor :: (Value -> a -> a) -> (RealLoc -> a -> a) -> (Register -> a -> a) -> AsmStmt -> (a -> a)
+stmtInfoExtractor valMod locMod regMod = \case
+    Mov v l             -> valMod v . locMod l
+    Cmp v l             -> valMod v . locMod l
+    BinStmt _ v l       -> valMod v . locMod l
+    IMul v r            -> valMod v . regMod r
+    IDiv l              -> locMod l
+    CDQ                 -> id
+    Xor v l             -> valMod v . locMod l
+    Not l               -> locMod l
+    CondMov _ l1 l2     -> locMod l1 . locMod l2
+    Jmp _               -> id
+    Jz _                -> id
+    Push v              -> valMod v
+    Pop l               -> locMod l
+    Call _              -> id
+    LeaveRet            -> id
+    Label _             -> id
+    Globl _             -> id
+    Custom _            -> id
+    RoString _ _        -> id
+    SectionRoData       -> id
+    SectionText         -> id
 
 registersAndStackInfo :: AllocM String
 registersAndStackInfo = do

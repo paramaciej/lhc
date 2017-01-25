@@ -25,18 +25,29 @@ genAsm (Q.ClearProgram functions) = do
 genFunction :: (String, Q.ClearFunction) -> RoDataM [AsmStmt]
 genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do
     allStmts <- cons (Globl funName) . concat <$> mapM (genBlock fun) (M.toAscList blocksWithStringLabels)
+    let usedCalleeSaveRegs = map (Register Q.Ptr) $ S.elems $ registersUsed allStmts  `S.intersection` S.fromList calleeSaveRegs
+    let localsSlots = let locals = localsUsed allStmts in if even (length usedCalleeSaveRegs)
+        then locals + locals `mod` 2
+        else (locals + 1) - locals `mod` 2
     let rspShift = (localsUsed allStmts + 1) `div` 2 * 16
-    let (before, label:after) = break (== Label funName) allStmts
-    return $ before ++
-        [ label
-        , Custom $ align "pushq" ++ "%rbp"
-        , Custom $ align "movq" ++ "%rsp, %rbp"
-        ] ++ [Custom $ align "subq" ++ "$" ++ show rspShift ++ ", %rsp" | rspShift > 0] ++ after
+    verbosePrint $ "Function " ++ green funName ++ " has used callee-save registers: "
+        ++ intercalate ", " (map show usedCalleeSaveRegs)
+    return $ concatMap (prologueEpilogue localsSlots usedCalleeSaveRegs) allStmts
   where
     inSets = calculateInSets fun
     labelMod label = if label == entry then (False, funName) else (True, show (ALabel label))
     blocksWithInSets = M.mapWithKey (\label block -> (block, inSets M.! label)) blocks
     blocksWithStringLabels = M.mapKeys labelMod blocksWithInSets
+    prologueEpilogue localsSlots saveRegs stmt
+        | stmt == Label funName =
+            [ stmt
+            , Custom $ align "pushq" ++ "%rbp"
+            , Custom $ align "movq" ++ "%rsp, %rbp"
+            ] ++
+            [ Custom $ align "subq" ++ "$" ++ show (localsSlots * 8) ++ ", %rsp" | localsSlots > 0] ++
+            map (Push . Location . RegisterLoc) saveRegs
+        | stmt == LeaveRet = map (Pop . RegisterLoc) (reverse saveRegs) ++ [stmt]
+        | otherwise = [stmt]
 
 genBlock :: Q.ClearFunction -> ((Bool, String), (Q.ClearBlock, Q.AliveSet)) -> RoDataM [AsmStmt]
 genBlock fun ((_, label), (block@(Q.ClearBlock _ out), thisInSet)) = do
