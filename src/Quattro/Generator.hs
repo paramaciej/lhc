@@ -51,17 +51,17 @@ genStmt block = A.ignorePos $ \case
             val <- genExpr expr
             declareWithType block ident typ
             setLocal ident val
-    A.Ass ident expr -> genExpr expr >>= setLocal ident
-    A.Incr ident -> do
-        loc <- getLocal ident
-        temp <- freshLocForIdent ident
+    A.Ass lval expr -> genExpr expr >>= setLocalLValue lval
+    A.Incr lval -> do
+        loc <- getLocalLValue lval
+        temp <- freshLocForLValue lval
         emitExpr $ BinStmt temp Add (Location loc) (Literal 1)
-        setLocal ident $ Location temp
-    A.Decr ident -> do
-        loc <- getLocal ident
-        temp <- freshLocForIdent ident
+        setLocalLValue lval $ Location temp
+    A.Decr lval -> do
+        loc <- getLocalLValue lval
+        temp <- freshLocForLValue lval
         emitExpr $ BinStmt temp Sub (Location loc) (Literal 1)
-        setLocal ident $ Location temp
+        setLocalLValue lval $ Location temp
     A.Ret expr -> do
         temp <- genExpr expr
         quitBlock $ Ret temp
@@ -102,6 +102,7 @@ genExpr = A.ignorePos $ \case
     A.EVar ident -> Location <$> getLocal ident
     A.ELitInt int -> return $ Literal int
     A.ELitBool bool -> return $ Literal $ if bool then 1 else 0
+    A.ENull t -> undefined -- TODO
     A.EApp ident args -> do
         values <- mapM genExpr args
         use (funRetTypes . at ident) >>= \case
@@ -110,6 +111,8 @@ genExpr = A.ignorePos $ \case
                 emitExpr $ Call ret (ident ^. A.aa . A.identString) values
                 return $ Location ret
             Nothing -> error $ "TYPE FOR FUNC " ++ show ident ++ " NOT FOUND"
+    A.EMember _ -> undefined -- TODO
+    A.ENew _ -> undefined -- TODO
     A.EString string -> do
         ret <- freshLoc Ptr
         emitExpr $ StringLit ret string
@@ -138,7 +141,7 @@ genExpr = A.ignorePos $ \case
                     (if or
                         then m $ A.Not (m $ A.EVar tempIdent)
                         else m $ A.EVar tempIdent)
-                    (m $ A.Block [m $ A.Ass tempIdent e2]))
+                    (m $ A.Block [m $ A.Ass (m $ A.LVar tempIdent) e2]))
                 ])
         mapM_ (genStmt tempBlock) (tempBlock ^. A.aa . A.blockStmts)
         val <- genExpr (m $ A.EVar tempIdent)
@@ -208,6 +211,9 @@ freshLoc regType = do
 freshLocForIdent :: A.Ident -> GenM Address
 freshLocForIdent ident = use (locals . at ident . singular _Just . locType) >>= freshLoc
 
+freshLocForLValue :: A.LValue -> GenM Address
+freshLocForLValue = undefined -- TODO
+
 freshLocForValue :: Value -> GenM Address
 freshLocForValue (Literal _) = freshLoc Int
 freshLocForValue (Location (Address _ t)) = freshLoc t
@@ -241,6 +247,9 @@ typeToRegType = A.ignorePos $ \case
     A.Str   -> Ptr
     _       -> error "fun type as reg!"
 
+setLocalLValue :: A.LValue -> Value -> GenM ()
+setLocalLValue = undefined -- TODO
+
 setLocal :: A.Ident -> Value -> GenM ()
 setLocal ident val = do
     bl <- use currentBlock
@@ -251,6 +260,9 @@ setLocal ident val = do
             newAddr <- freshLocForValue val
             locals . at ident . _Just . address . at bl .= Just newAddr
             genMov newAddr val
+
+getLocalLValue :: A.LValue -> GenM Address -- TODO taka sygnatura?
+getLocalLValue = undefined -- TODO
 
 getLocal :: A.Ident -> GenM Address
 getLocal ident = do

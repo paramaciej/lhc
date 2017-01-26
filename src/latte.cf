@@ -48,11 +48,11 @@ Init.      Item ::= PIdent PAss Expr ;
 
 separator nonempty Item "," ;
 
-Ass.       Stmt ::= PIdent PAss Expr  PSemicolon ;
+Ass.       Stmt ::= LValue PAss Expr PSemicolon ;
 
-Incr.      Stmt ::= PIdent PIncr  PSemicolon ;
+Incr.      Stmt ::= LValue PIncr PSemicolon ;
 
-Decr.      Stmt ::= PIdent PDecr  PSemicolon ;
+Decr.      Stmt ::= LValue PDecr PSemicolon ;
 
 Ret.       Stmt ::= PRet Expr PSemicolon ;
 
@@ -66,15 +66,13 @@ While.     Stmt ::= PWhile PParBegin Expr PParEnd Stmt ;
 
 SExp.      Stmt ::= Expr  PSemicolon ;
 
+LVar.      LValue ::= PIdent ;
+
+LMember.   LValue ::= PIdent PDot PIdent ;
+
 -- Types ---------------------------------------------------
 
-Int.       Type ::= PInt ;
-
-Str.       Type ::= PStr ;
-
-Bool.      Type ::= PBool ;
-
-Void.      Type ::= PVoid ;
+VType.     Type ::= PIdent ;
 
 internal   Fun. Type ::= Type PParBegin [Type] PParEnd ;
 
@@ -90,7 +88,13 @@ ELitTrue.  Expr6 ::= PTrue ;
 
 ELitFalse. Expr6 ::= PFalse ;
 
+ENull.     Expr6 ::= PParBegin Type PNull ;
+
 EApp.      Expr6 ::= PIdent PParBegin [Expr] PParEnd ;
+
+EMember.   Expr6 ::= Member ;
+
+ENew.      Expr6 ::= PNew Type ;
 
 EString.   Expr6 ::= PString ;
 
@@ -118,6 +122,9 @@ ECoerc.    Expr6 ::= PParBegin Expr PParEnd ;
 
 
 separator  Expr "," ;
+
+MemberAttr.     Member ::= PIdent PDot PIdent ;
+MemberMethod.   Member ::= PIdent PDot PIdent PParBegin [Expr] PParEnd ;
 
 -- operators -----------------------------------------------
 
@@ -155,17 +162,15 @@ comment    "/*" "*/" ;
 
 position token PClass {"class"};
 position token PExtends {"extends"};
-
-position token PInt {"int"};
-position token PStr {"string"};
-position token PBool {"boolean"};
-position token PVoid {"void"};
+position token PNew {"new"};
+position token PNull {")null"};
 
 position token PRet {"return"};
 position token PIf {"if"};
 position token PElse {"else"};
 position token PWhile {"while"};
 
+position token PDot {"."};
 position token PSemicolon {";"};
 position token PCurlyBegin {"{"};
 position token PCurlyEnd {"}"};

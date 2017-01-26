@@ -118,17 +118,17 @@ checkBlock returnType block = do
         Decl t items -> forM_ items $ ignorePos $ \case
             NoInit ident    -> putItemIntoState t ident stmt (InBlock block)
             Init ident expr -> putItemIntoState t ident stmt (InBlock block) >> constrainExprType t expr
-        Ass ident expr -> do
-            t <- getIdentType ident
+        Ass lval expr -> do
+            t <- getLValueType lval
             constrainExprType t expr
-        Incr ident -> do
-            t <- getIdentType ident
+        Incr lval -> do
+            t <- getLValueType lval
             unless (t == makeAbs Int) $ contextError stmt ("Increment operator requires type " ++ show Int ++ ", but `"
-                ++ absShow ident ++ "` is of type " ++ absShow t) >>= throwError
-        Decr ident -> do
-            t <- getIdentType ident
+                ++ absShow lval ++ "` is of type " ++ absShow t) >>= throwError
+        Decr lval -> do
+            t <- getLValueType lval
             unless (t == makeAbs Int) $ contextError stmt ("Decrement operator requires type " ++ show Int ++ ", but `"
-                ++ absShow ident ++ "` is of type " ++ absShow t) >>= throwError
+                ++ absShow lval ++ "` is of type " ++ absShow t) >>= throwError
         Ret expr -> constrainExprType returnType expr
         VRet -> unless (returnType == makeAbs Void) $ contextError stmt
             ("Void return in function returning type " ++ absShow returnType ++ "!") >>= throwError
@@ -149,6 +149,7 @@ getExprType expr = case expr ^. aa of
     EVar ident -> getIdentType ident
     ELitInt _ -> return $ makeAbs Int
     ELitBool _ -> return $ makeAbs Bool
+    ENull t -> return t
     EApp ident exprs -> do
         types <- mapM getExprType exprs
         funcType <- getIdentType ident
@@ -156,6 +157,8 @@ getExprType expr = case expr ^. aa of
             Just t -> return t
             Nothing -> contextError expr ("Application function of type " ++ absShow funcType
                 ++ " to arguments of types: " ++ intercalate ", " (map absShow types) ++ " failed!") >>= throwError
+    EMember _ -> undefined -- TODO
+    ENew t -> return t
     EString _ -> return (makeAbs Str)
     Neg e -> constrainExprType (makeAbs Int) e >> return (makeAbs Int)
     Not e -> constrainExprType (makeAbs Bool) e >> return (makeAbs Bool)
@@ -184,6 +187,9 @@ getIdentType ident = do
     case mType of
         Just info -> return $ info ^. typ
         Nothing -> identUnknown ident >>= throwError
+
+getLValueType :: LValue -> CheckSt Type
+getLValueType = undefined -- TODO
 
 constrainExprType :: Type ->  Expr -> CheckSt ()
 constrainExprType expectedType expr = do

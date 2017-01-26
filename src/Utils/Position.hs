@@ -26,14 +26,6 @@ class Positioned a where
     position :: a -> Position
 
 
-instance Positioned PInt where
-    position (PInt x) = calculate x
-instance Positioned PStr where
-    position (PStr x) = calculate x
-instance Positioned PBool where
-    position (PBool x) = calculate x
-instance Positioned PVoid where
-    position (PVoid x) = calculate x
 instance Positioned PRet where
     position (PRet x) = calculate x
 instance Positioned PIf where
@@ -100,6 +92,12 @@ instance Positioned PClass where
     position (PClass x) = calculate x
 instance Positioned PExtends where
     position (PExtends x) = calculate x
+instance Positioned PNew where
+    position (PNew x) = calculate x
+instance Positioned PDot where
+    position (PDot x) = calculate x
+instance Positioned PNull where
+    position (PNull x) = calculate x
 
 
 instance Positioned Program where
@@ -140,15 +138,16 @@ instance Positioned Stmt where
     position (While pWhile _ _ _ s)     = combineBeginEnd pWhile s
     position (SExp expr semicolon)      = combineBeginEnd expr semicolon
 
+instance Positioned LValue where
+    position (LVar i) = position i
+    position (LMember i _ n) = combineBeginEnd i n
+
 instance Positioned Item where
     position (NoInit i)     = position i
     position (Init i _ expr)  = combineBeginEnd i expr
 
 instance Positioned Type where
-    position (Int x)    = position x
-    position (Str x)    = position x
-    position (Bool x)   = position x
-    position (Void x)   = position x
+    position (VType x)  = position x
     position Fun {}     = error "impossible happened"
 
 instance Positioned Expr where
@@ -156,7 +155,10 @@ instance Positioned Expr where
     position (ELitInt int)      = position int
     position (ELitTrue true)    = position true
     position (ELitFalse false)  = position false
+    position (ENull pB _ pNull) = combineBeginEnd pB pNull
     position (EApp i _ _ par)   = combineBeginEnd i par
+    position (EMember member)   = position member
+    position (ENew n cls)       = combineBeginEnd n cls
     position (EString str)      = position str
     position (Neg neg expr)     = combineBeginEnd neg expr
     position (Not not expr)     = combineBeginEnd not expr
@@ -166,6 +168,10 @@ instance Positioned Expr where
     position (EAnd e1 _ e2)     = combineBeginEnd e1 e2
     position (EOr e1 _ e2)      = combineBeginEnd e1 e2
     position (ECoerc pB _ pE)   = combineBeginEnd pB pE
+
+instance Positioned Member where
+    position (MemberAttr i _ n) = combineBeginEnd i n
+    position (MemberMethod i _ _ _ _ end) = combineBeginEnd i end
 
 instance Positioned AddOp where
     position (Plus x)   = position x
