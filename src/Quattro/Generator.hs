@@ -11,15 +11,15 @@ import Control.Monad.State
 import qualified Data.Map as M
 
 genProgram :: A.Program -> GenM ()
-genProgram program = mapM_ genTopDef (program ^. A.aa . A.programTopDefs)
+genProgram program = mapM_ genFnDef (program ^. A.aa . A.programFunctions)
 
-genTopDef :: A.TopDef -> GenM ()
-genTopDef topDef = do
-    let block = topDef ^. A.aa . A.topDefBlock
-    let ident = topDef ^. A.aa . A.topDefIdent
+genFnDef :: A.FnDef -> GenM ()
+genFnDef fnDef = do
+    let block = fnDef ^. A.aa . A.fnDefBlock
+    let ident = fnDef ^. A.aa . A.fnDefIdent
 
     codeForFun ident
-    mapM_ (uncurry $ genFunArg block) (zip [0..] $ topDef ^. A.aa . A.topDefArgs ^.. traverse . A.aa)
+    mapM_ (uncurry $ genFunArg block) (zip [0..] $ fnDef ^. A.aa . A.fnDefArgs ^.. traverse . A.aa)
 
     genBlock block
 

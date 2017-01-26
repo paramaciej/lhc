@@ -20,8 +20,8 @@ generateValidatedQuattro program = do
     finalState <- lift $ execStateT (genProgram program) initialState
     validateQuattro finalState
   where
-    funReturns = M.fromList $ runtimes ++ map aux (program ^. A.aa . A.programTopDefs ^.. traverse . A.aa)
-    aux topDef = (topDef ^. A.topDefIdent, typeToRegType (topDef ^. A.topDefType))
+    funReturns = M.fromList $ runtimes ++ map aux (program ^. A.aa . A.programFunctions ^.. traverse . A.aa)
+    aux fnDef = (fnDef ^. A.fnDefIdent, typeToRegType (fnDef ^. A.fnDefType))
     runtimes =
         [ runtimeFun "printInt"     Int
         , runtimeFun "printString"  Int

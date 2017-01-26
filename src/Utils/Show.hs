@@ -9,6 +9,7 @@ module Utils.Show
     , red
     , green
     , yellow
+    , dullGreen
     ) where
 
 import System.Console.ANSI
@@ -144,6 +145,10 @@ instance ColorShow PString where
     stShow (PString x) = addFromToken x (colorizeCStr [SetColor Foreground Dull Magenta])
 instance ColorShow PIdent where
     stShow (PIdent x) = addFromToken x toCStr
+instance ColorShow PClass where
+    stShow (PClass x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
+instance ColorShow PExtends where
+    stShow (PExtends x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
 
 
 instance ColorShow Program where
@@ -153,9 +158,21 @@ instance ColorShow TopDef where
     stShow (FnDef t name parB args parE block) = do
         stShow t >> stShow name
         stShow parB >> csvShow args >> stShow parE >> stShow block
+    stShow (ClsDef cls ident body) = stShow cls >> stShow ident >> stShow body
+    stShow (ClsDefExt cls this ext parent body) = stShow cls >> stShow this >> stShow ext >> stShow parent >> stShow body
 
 instance ColorShow Arg where
     stShow (Arg t i) = stShow t >> stShow i
+
+instance ColorShow ClassBody where
+    stShow (ClassBody curlyBegin stmts curlyEnd) = stShow curlyBegin >> mapM_ stShow stmts >> stShow curlyEnd
+
+instance ColorShow ClassStmt where
+    stShow (Attr t items semicolon) = stShow t >> csvShow items >> stShow semicolon
+    stShow (Method t i parB args parE block) = stShow t >> stShow i >> stShow parB >> csvShow args >> stShow parE >> stShow block
+
+instance ColorShow AttrItem where
+    stShow (AttrItem ident) = stShow ident
 
 instance ColorShow Block where
     stShow (Block curlyBegin stmts curlyEnd) = stShow curlyBegin >> mapM_ stShow stmts >> stShow curlyEnd
@@ -227,3 +244,6 @@ green = colorize [SetColor Foreground Vivid Green]
 
 yellow :: String -> String
 yellow = colorize [SetColor Foreground Vivid Yellow]
+
+dullGreen :: String -> String
+dullGreen = colorize [SetColor Foreground Dull Green]

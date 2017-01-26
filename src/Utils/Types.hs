@@ -54,9 +54,9 @@ makeLenses ''SymbolInfo
 
 insertTopTypes :: CheckSt ()
 insertTopTypes = do
-    tds <- use (wholeProgram . aa . programTopDefs)
+    tds <- use (wholeProgram . aa . programFunctions)
     let funcType t args = makeAbs $ Fun t (args ^.. traverse . aa . argType)
-    let aux td = putItemIntoState (funcType (td ^. aa . topDefType) (td ^. aa . topDefArgs)) (td ^. aa . topDefIdent) td Global
+    let aux td = putItemIntoState (funcType (td ^. aa . fnDefType) (td ^. aa . fnDefArgs)) (td ^. aa . fnDefIdent) td Global
     mapM_ aux tds
 
 buildInfoSt :: Program -> InfoSt
@@ -80,9 +80,9 @@ checkProgram :: CheckSt ()
 checkProgram = do
     insertTopTypes
     checkMain
-    topDefs <- use $ wholeProgram . aa . programTopDefs
-    mapM_ checkFunction topDefs
-    mapM_ checkFunReturn topDefs
+    fnDefs <- use $ wholeProgram . aa . programFunctions
+    mapM_ checkFunction fnDefs
+    mapM_ checkFunReturn fnDefs
 
 
 checkMain :: CheckSt ()
@@ -94,16 +94,16 @@ checkMain = use (symbols . at (makeAbs $ Ident "main")) >>= \case
                     ++ ", but it is of type " ++ absShow (main ^. typ))  >>= throwError
         Nothing -> throwError $ red "Error: " ++ "File doesn't contain the `main` function!"
 
-checkFunReturn :: TopDef -> CheckSt ()
-checkFunReturn topDef = unless (topDef ^. aa . topDefType == makeAbs Void) $ case hasReturn (simplifyTopDef topDef) of
+checkFunReturn :: FnDef -> CheckSt ()
+checkFunReturn fnDef = unless (fnDef ^. aa . fnDefType == makeAbs Void) $ case hasReturn (simplifyFnDef fnDef) of
     Right () -> return ()
     Left err -> throwError err
 
-checkFunction :: TopDef -> CheckSt ()
-checkFunction topDef = do
-    let defPlace = InBlock $ topDef ^. aa . topDefBlock
-    mapM_ (\arg -> putItemIntoState (arg ^. aa . argType) (arg ^. aa . argIdent) arg defPlace) (topDef ^. aa . topDefArgs)
-    checkBlock (topDef ^. aa . topDefType) (topDef ^. aa . topDefBlock)
+checkFunction :: FnDef -> CheckSt ()
+checkFunction fnDef = do
+    let defPlace = InBlock $ fnDef ^. aa . fnDefBlock
+    mapM_ (\arg -> putItemIntoState (arg ^. aa . argType) (arg ^. aa . argIdent) arg defPlace) (fnDef ^. aa . fnDefArgs)
+    checkBlock (fnDef ^. aa . fnDefType) (fnDef ^. aa . fnDefBlock)
 
 checkBlock :: Type -> Block -> CheckSt ()
 checkBlock returnType block = do

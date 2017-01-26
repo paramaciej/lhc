@@ -13,10 +13,24 @@ class (ColorShow a, Positioned a) => ToAbstract a b where
     toA a = AbsPos (Just $ position a) (Just $ cShow a) (_to a)
 
 instance ToAbstract L.Program AProgram where
-    _to (L.Program tds) = Program (map toA tds)
+    _to (L.Program tds) = Program cls fn
+      where
+        (cls, fn) = foldr aux ([], []) tds
+        aux a (accCls, accFn) = case a of
+            L.FnDef t i _ args _ block -> (accCls, auxAbs a (FnDef (toA t) (toA i) (map toA args) (toA block)) : accFn)
+            L.ClsDef _ i body          -> (auxAbs a (ClsDef (toA i) Nothing (toA body)) : accCls, accFn)
+            L.ClsDefExt _ i _ ext body -> (auxAbs a (ClsDef (toA i) (Just $ toA ext) (toA body)) : accCls, accFn)
+        auxAbs a = AbsPos (Just $ position a) (Just $ cShow a)
 
-instance ToAbstract L.TopDef ATopDef where
-    _to (L.FnDef t i _ args _ block) = FnDef (toA t) (toA i) (map toA args) (toA block)
+instance ToAbstract L.ClassBody AClassBody where
+    _to (L.ClassBody _ stmts _) = ClassBody (map toA stmts)
+
+instance ToAbstract L.ClassStmt AClassStmt where
+    _to (L.Attr t items _)                = Attr (toA t) (map toA items)
+    _to (L.Method t ident _ args _ block) = Method (toA t) (toA ident) (map toA args) (toA block)
+
+instance ToAbstract L.AttrItem AAttrItem where
+    _to (L.AttrItem item) = AttrItem (toA item)
 
 instance ToAbstract L.Arg AArg where
     _to (L.Arg t i) = Arg (toA t) (toA i)

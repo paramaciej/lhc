@@ -65,20 +65,20 @@ cutAfterReturn stmts = reverse $ drop (aux stmts) $ reverse stmts
         _ -> aux xs
     aux [] = 0
 
-simplifyTopDef :: TopDef -> TopDef
-simplifyTopDef td = let simplified = over (aa . topDefBlock) simplifyBlock td
-    in if simplified ^. aa. topDefType == makeAbs Void && isLeft (hasReturn simplified)
-        then simplified & aa . topDefBlock . aa . blockStmts %~ (++ [makeAbs VRet])
+simplifyFnDef :: FnDef -> FnDef
+simplifyFnDef td = let simplified = over (aa . fnDefBlock) simplifyBlock td
+    in if simplified ^. aa. fnDefType == makeAbs Void && isLeft (hasReturn simplified)
+        then simplified & aa . fnDefBlock . aa . blockStmts %~ (++ [makeAbs VRet])
         else simplified
 
 simplifyProgram :: Program -> Program
-simplifyProgram = forgetPos . over (aa . programTopDefs . traverse) simplifyTopDef
+simplifyProgram = forgetPos . over (aa . programFunctions . traverse) simplifyFnDef
 
 
-hasReturn :: TopDef -> Either String ()
-hasReturn topDef = runExcept $ constrainReturn topDef (topDef ^. aa . topDefBlock)
+hasReturn :: FnDef -> Either String ()
+hasReturn fnDef = runExcept $ constrainReturn fnDef (fnDef ^. aa . fnDefBlock)
 
-constrainReturn :: TopDef -> Block -> Except String ()
+constrainReturn :: FnDef -> Block -> Except String ()
 constrainReturn fun block = aux (block ^. aa . blockStmts)
   where
     aux :: [Stmt] -> Except String ()
@@ -88,4 +88,4 @@ constrainReturn fun block = aux (block ^. aa . blockStmts)
         BStmt block -> constrainReturn fun block `catchError` (\_ -> aux xs)
         CondElse _ bTrue bFalse -> (constrainReturn fun bTrue >> constrainReturn fun bFalse) `catchError` const (aux xs)
         _ -> aux xs
-    aux [] = throwError $ red ("Error in function " ++ absShow (fun ^. aa . topDefIdent) ++ " (" ++ fromJust (show <$> fun ^. pos) ++ "):") ++ " no return statement!"
+    aux [] = throwError $ red ("Error in function " ++ absShow (fun ^. aa . fnDefIdent) ++ " (" ++ fromJust (show <$> fun ^. pos) ++ "):") ++ " no return statement!"

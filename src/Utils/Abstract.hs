@@ -50,24 +50,68 @@ instance Show AIdent where
     show = _identString
 
 type Program = AbsPos AProgram
-newtype AProgram = Program
-    { _programTopDefs :: [TopDef]
+data AProgram = Program
+    { _programClasses   :: [ClsDef]
+    , _programFunctions :: [FnDef]
     }
 
 instance Show AProgram where
-    show (Program topDefs) = intercalate "\n" (map absShow topDefs)
+    show (Program cls fns) = intercalate "\n" (map absShow cls) ++ "\n" ++ intercalate "\n" (map absShow fns)
 
-type TopDef = AbsPos ATopDef
-data ATopDef = FnDef
-    { _topDefType   :: Type
-    , _topDefIdent  :: Ident
-    , _topDefArgs   :: [Arg]
-    , _topDefBlock  :: Block
+type FnDef = AbsPos AFnDef
+data AFnDef = FnDef
+    { _fnDefType   :: Type
+    , _fnDefIdent  :: Ident
+    , _fnDefArgs   :: [Arg]
+    , _fnDefBlock  :: Block
     }
 
-instance Show ATopDef where
-    show (FnDef t ident args block) = absShow t ++ " " ++ absShow ident ++ " ("
-        ++ intercalate "," (map absShow args) ++ ") " ++ absShow block
+type ClsDef = AbsPos AClsDef
+data AClsDef = ClsDef
+    { _clsDefIdent  :: Ident
+    , _clsDefExtend :: Maybe Ident
+    , _clsDefBody   :: ClassBody
+    }
+
+instance Show AFnDef where
+    show (FnDef t ident args block) = absShow t ++ " " ++ absShow ident ++ "("
+        ++ intercalate ", " (map absShow args) ++ ") " ++ absShow block
+
+instance Show AClsDef where
+    show (ClsDef i mExt body) = green "class " ++ dullGreen (absShow i) ++ ext ++ absShow body
+      where
+        ext = case mExt of
+            Nothing -> " "
+            Just e -> green " extends " ++ dullGreen (absShow e) ++ " "
+
+type ClassBody = AbsPos AClassBody
+newtype AClassBody = ClassBody
+    { _classBodyStmts :: [ClassStmt]
+    }
+
+instance Show AClassBody where
+    show (ClassBody stmts) = "{\n" ++ indentStr (unlines $ map absShow stmts) ++ "}"
+
+type ClassStmt = AbsPos AClassStmt
+data AClassStmt
+    = Attr { _attrType :: Type, _attrItems :: [AttrItem] }
+    | Method
+        { _methodRetType :: Type
+        , _methodName :: Ident
+        , _methodArgs :: [Arg]
+        , _methodBlock :: Block
+        }
+
+instance Show AClassStmt where
+    show (Attr t items) = absShow t ++ " " ++ intercalate ", " (map absShow items) ++ ";"
+    show (Method t name args block) = absShow t ++ " " ++ absShow name ++ "("
+        ++ intercalate ", " (map absShow args) ++ ") " ++ absShow block
+
+type AttrItem = AbsPos AAttrItem
+newtype AAttrItem = AttrItem Ident
+
+instance Show AAttrItem where
+    show (AttrItem ident) = absShow ident
 
 type Arg = AbsPos AArg
 data AArg = Arg
@@ -211,7 +255,8 @@ instance Show ARelOp where
 
 makeLenses ''AIdent
 makeLenses ''AProgram
-makeLenses ''ATopDef
+makeLenses ''AFnDef
+makeLenses ''AClsDef
 makeLenses ''AArg
 makeLenses ''ABlock
 makeLenses ''AStmt

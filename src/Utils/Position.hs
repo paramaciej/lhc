@@ -96,19 +96,35 @@ instance Positioned PString where
     position (PString x) = calculate x
 instance Positioned PIdent where
     position (PIdent x) = calculate x
+instance Positioned PClass where
+    position (PClass x) = calculate x
+instance Positioned PExtends where
+    position (PExtends x) = calculate x
 
 
 instance Positioned Program where
     position (Program tds) = combineBeginEnd (head tds) (last tds)
 
 instance Positioned TopDef where
-    position (FnDef t _ _ _ _ block) = combineBeginEnd t block
+    position (FnDef t _ _ _ _ block)  = combineBeginEnd t block
+    position (ClsDef c _ body)        = combineBeginEnd c body
+    position (ClsDefExt c _ _ _ body) = combineBeginEnd c body
+
+instance Positioned ClassStmt where
+    position (Attr t _ semicolon)       = combineBeginEnd t semicolon
+    position (Method t _ _ _ _ block)   = combineBeginEnd t block
+
+instance Positioned AttrItem where
+    position (AttrItem i) = position i
 
 instance Positioned Arg where
     position (Arg t i) = combineBeginEnd t i
 
 instance Positioned Block where
     position (Block curlyBegin _ curlyEnd) = Position (begin $ position curlyBegin) (end $ position curlyEnd)
+
+instance Positioned ClassBody where
+    position (ClassBody curlyBegin _ curlyEnd) = Position (begin $ position curlyBegin) (end $ position curlyEnd)
 
 instance Positioned Stmt where
     position (Empty semicolon)          = position semicolon
