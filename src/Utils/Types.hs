@@ -14,7 +14,9 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.List
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Maybe
+import Data.Foldable
 
 
 type SymbolsSt = M.Map Ident SymbolInfo
@@ -33,8 +35,9 @@ instance Eq DefPlace where
 
 data InfoSt = InfoSt
     { _symbols :: SymbolsSt
+    , _classes :: ClassSt
     , _wholeProgram :: Program
-    }
+    } deriving Show
 
 data SymbolInfo = SymbolInfo
     { _typ :: Type
@@ -48,26 +51,67 @@ instance Show SymbolInfo where
         Nothing -> "."
         Just si -> "\n\t prev:\n" ++ indentStr (show si)
 
+type ClassSt = M.Map Ident ClassInfo
+
+data ClassInfo = ClassInfo
+    { _attributes :: M.Map Ident Type
+    , _methods :: M.Map Ident Type
+    , _superClass :: Maybe Ident
+    } deriving Show
+
 makeLenses ''InfoSt
 makeLenses ''SymbolInfo
+makeLenses ''ClassInfo
 
 
 insertTopTypes :: CheckSt ()
 insertTopTypes = do
     tds <- use (wholeProgram . aa . programFunctions)
-    let funcType t args = makeAbs $ Fun t (args ^.. traverse . aa . argType)
-    let aux td = putItemIntoState (funcType (td ^. aa . fnDefType) (td ^. aa . fnDefArgs)) (td ^. aa . fnDefIdent) td Global
     mapM_ aux tds
+  where
+    aux td = putItemIntoState (makeFunType (td ^. aa . fnDefType) (td ^. aa . fnDefArgs)) (td ^. aa . fnDefIdent) td Global
+
+insertClassInfos :: CheckSt ()
+insertClassInfos = do
+    classes <- use (wholeProgram . aa . programClasses)
+    let names = map (^. aa . clsDefIdent) classes
+    _ <- foldlM checkNames M.empty names
+    mapM_ insertClass classes
+  where
+    checkNames acc ident = case ident `M.lookup` acc of
+        Just prevIdent -> reDefinition prevIdent ident "Class"
+        Nothing -> if (ident ^. aa . identString) `S.member` S.fromList ["int", "boolean", "string", "void"]
+            then contextError ident "Class name must be different than primitive type names!" >>= throwError
+            else return $ M.insert ident ident acc
+    insertClass cls = do
+        let stmts = cls ^. aa . clsDefBody . aa . classBodyStmts
+        (attrs, methods) <- foldlM aux (M.empty, M.empty) stmts
+        classes . at (cls ^. aa . clsDefIdent) .= Just (ClassInfo (M.map snd attrs) (M.map snd methods) (cls ^. aa . clsDefExtend))
+    aux (amp, mmp) clsStmt = case clsStmt ^. aa of
+        Attr t is -> foldlM (attrAux t) (amp, mmp) is
+        Method retType name args _ -> case name `M.lookup` mmp of
+            Just (prev, _) -> reDefinition prev name "Method in this class"
+            Nothing -> return (amp, M.insert name (name, makeFunType retType args) mmp)
+    attrAux t (amp, mmp) attrItem = let AttrItem i = attrItem ^. aa in case i `M.lookup` amp of
+        Just (prev, _) -> reDefinition prev i "Attribute"
+        Nothing -> return (M.insert i (i, t) amp, mmp)
+    reDefinition prev new display = do
+        let posInfo = maybe "" (\s -> " (at " ++ show s ++ ")") (prev ^. pos)
+        contextError new (display ++ " `" ++ absShow new ++ "` is already declared" ++ posInfo ++ "!") >>= throwError
+
+makeFunType :: Type -> [Arg] -> Type
+makeFunType t args = makeAbs $ Fun t (args ^.. traverse . aa . argType)
 
 buildInfoSt :: Program -> InfoSt
-buildInfoSt = InfoSt $ M.fromList
-    [ runtimeFun "printInt"     Void    [Int]
-    , runtimeFun "printString"  Void    [Str]
-    , runtimeFun "error"        Void    []
-    , runtimeFun "readInt"      Int     []
-    , runtimeFun "readString"   Str     []
-    ]
+buildInfoSt = InfoSt buildIns M.empty
   where
+    buildIns = M.fromList
+        [ runtimeFun "printInt"     Void    [Int]
+        , runtimeFun "printString"  Void    [Str]
+        , runtimeFun "error"        Void    []
+        , runtimeFun "readInt"      Int     []
+        , runtimeFun "readString"   Str     []
+        ]
     runtimeFun name retType argTypes = let ident = makeAbs (Ident name)
         in (ident, SymbolInfo (makeAbs $ Fun (makeAbs retType) (map makeAbs argTypes)) ident Global Nothing)
 
@@ -79,6 +123,7 @@ programValid program = evalStateT (runExceptT checkProgram) (buildInfoSt program
 checkProgram :: CheckSt ()
 checkProgram = do
     insertTopTypes
+    insertClassInfos
     checkMain
     fnDefs <- use $ wholeProgram . aa . programFunctions
     mapM_ checkFunction fnDefs

@@ -284,6 +284,7 @@ instance Show ARelOp where
 makeLenses ''AProgram
 makeLenses ''AFnDef
 makeLenses ''AClsDef
+makeLenses ''AClassBody
 makeLenses ''AArg
 makeLenses ''ABlock
 makeLenses ''AStmt
