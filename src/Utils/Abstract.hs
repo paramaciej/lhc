@@ -244,6 +244,12 @@ data AMember
     | MemberMethod Ident Ident [Expr]
   deriving Eq
 
+data ClassMemberKind = AttrKind | MethodKind
+
+instance Show ClassMemberKind where
+    show AttrKind = "attribute"
+    show MethodKind = "method"
+
 instance Show AMember where
     show (MemberAttr obj attr) = absShow obj ++ "." ++ absShow attr
     show (MemberMethod obj method args) = absShow obj ++ "." ++ absShow method ++ "(" ++ intercalate ", " (map absShow args) ++ ")"

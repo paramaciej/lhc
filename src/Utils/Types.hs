@@ -75,17 +75,20 @@ insertClassInfos :: CheckSt ()
 insertClassInfos = do
     classes <- use (wholeProgram . aa . programClasses)
     let names = map (^. aa . clsDefIdent) classes
-    _ <- foldlM checkNames M.empty names
-    mapM_ insertClass classes
+    validClsNames <- S.fromList . M.keys <$> foldlM checkNames M.empty names
+    mapM_ (insertClass validClsNames) classes
   where
     checkNames acc ident = case ident `M.lookup` acc of
         Just prevIdent -> reDefinition prevIdent ident "Class"
         Nothing -> if (ident ^. aa . identString) `S.member` S.fromList ["int", "boolean", "string", "void"]
             then contextError ident "Class name must be different than primitive type names!" >>= throwError
             else return $ M.insert ident ident acc
-    insertClass cls = do
+    insertClass validNames cls = do
         let stmts = cls ^. aa . clsDefBody . aa . classBodyStmts
         (attrs, methods) <- foldlM aux (M.empty, M.empty) stmts
+        case  cls ^. aa . clsDefExtend of
+            Nothing -> return ()
+            Just super -> unless (super `S.member` validNames) $ contextError super ("Class `" ++ absShow (cls ^. aa . clsDefIdent) ++ "` is extending non-existent class `" ++ absShow super ++"`!") >>= throwError
         classes . at (cls ^. aa . clsDefIdent) .= Just (ClassInfo (M.map snd attrs) (M.map snd methods) (cls ^. aa . clsDefExtend))
     aux (amp, mmp) clsStmt = case clsStmt ^. aa of
         Attr t is -> foldlM (attrAux t) (amp, mmp) is
@@ -202,7 +205,15 @@ getExprType expr = case expr ^. aa of
             Just t -> return t
             Nothing -> contextError expr ("Application function of type " ++ absShow funcType
                 ++ " to arguments of types: " ++ intercalate ", " (map absShow types) ++ " failed!") >>= throwError
-    EMember _ -> undefined -- TODO
+    EMember member -> case member ^. aa of
+        MemberAttr obj attr -> getMemberType AttrKind obj attr
+        MemberMethod obj method exprs -> do
+            argTypes <- mapM getExprType exprs
+            funcType <- getMemberType MethodKind obj method
+            funcApplication funcType argTypes >>= \case
+                Just t -> return t
+                Nothing -> contextError expr ("Application method of type " ++ absShow funcType
+                    ++ " to arguments of types: " ++ intercalate ", " (map absShow argTypes) ++ " failed!") >>= throwError
     ENew t -> return t
     EString _ -> return (makeAbs Str)
     Neg e -> constrainExprType (makeAbs Int) e >> return (makeAbs Int)
@@ -226,21 +237,52 @@ getExprType expr = case expr ^. aa of
 
 
 getIdentType :: Ident -> CheckSt Type
-getIdentType ident = do
-    xx <- get
-    let mType = M.lookup ident (xx ^. symbols)
-    case mType of
-        Just info -> return $ info ^. typ
-        Nothing -> identUnknown ident >>= throwError
+getIdentType ident = use (symbols . at ident) >>= \case
+    Just info -> return $ info ^. typ
+    Nothing -> identUnknown ident >>= throwError
 
 getLValueType :: LValue -> CheckSt Type
-getLValueType = undefined -- TODO
+getLValueType lval = case lval ^. aa of
+    LVar ident -> getIdentType ident
+    LMember obj attr -> getMemberType AttrKind obj attr
 
-constrainExprType :: Type ->  Expr -> CheckSt ()
+getMemberType :: ClassMemberKind -> Ident -> Ident -> CheckSt Type
+getMemberType kind obj member = getIdentType obj >>= \typ -> case typ ^. aa of
+    ClsType cls -> use (classes . at cls) >>= \case
+        Just clsInfo -> clsInfoMemberType kind clsInfo member
+        Nothing -> contextError obj ("Class `" ++ absShow cls ++ "` not found!") >>= throwError
+    _ -> contextError obj ("Identifier `" ++ absShow obj ++ "` must be a class instance!`") >>= throwError
+
+clsInfoMemberType :: ClassMemberKind -> ClassInfo -> Ident -> CheckSt Type
+clsInfoMemberType kind clsInfo attr = case attr `M.lookup` (clsInfo ^. getter) of
+    Just t -> return t
+    Nothing -> case clsInfo ^. superClass of
+        Just super -> use (classes . at super) >>= \case
+            Just superInfo -> clsInfoMemberType kind superInfo attr
+            Nothing -> contextError super ("Class `" ++ absShow super ++ "` is not definied!") >>= throwError
+        Nothing -> contextError attr ("Class hasn't got `" ++ absShow attr ++ "` " ++ show kind ++ "!") >>= throwError
+  where
+    getter = case kind of
+        AttrKind -> attributes
+        MethodKind -> methods
+
+constrainExprType :: Type -> Expr -> CheckSt ()
 constrainExprType expectedType expr = do
     actualType <- getExprType expr
-    unless (expectedType == actualType) $ contextError expr ("Expression `" ++ absShow expr ++ "` was expected to be of type "
+    accepted <- actualType `isSubTypeOf` expectedType
+    unless accepted $ contextError expr ("Expression `" ++ absShow expr ++ "` was expected to be a subtype of "
         ++ absShow expectedType ++ " but it is of type " ++ absShow actualType ++ "!") >>= throwError
+  where
+    isSubTypeOf :: Type -> Type -> CheckSt Bool
+    sub `isSubTypeOf` sup = case (sub ^. aa, sup ^. aa) of
+        (ClsType subIdent, ClsType supIdent) -> if subIdent == supIdent
+            then return True
+            else use (classes . at subIdent) >>= \case
+                Just info -> case info ^. superClass of
+                    Just subSuper -> makeAbs (ClsType subSuper) `isSubTypeOf` sup
+                    Nothing -> return False
+                Nothing -> return False
+        (subType, supType) -> return $ subType == supType
 
 funcApplication :: Type -> [Type] -> CheckSt (Maybe Type)
 funcApplication funType types = do
