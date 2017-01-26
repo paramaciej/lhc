@@ -46,6 +46,8 @@ newtype AIdent = Ident
     { _identString :: String
     } deriving (Eq, Ord)
 
+makeLenses ''AIdent
+
 instance Show AIdent where
     show = _identString
 
@@ -140,9 +142,9 @@ data AStmt
     = Empty
     | BStmt {_bStmtBlock :: Block}
     | Decl  {_declType ::Type, _declItems :: [Item]}
-    | Ass   {_assIdent :: Ident, _assExpr :: Expr}
-    | Incr  {_incrIdent :: Ident}
-    | Decr  {_decrIdent :: Ident}
+    | Ass   {_assLValue :: LValue, _assExpr :: Expr}
+    | Incr  {_incrLValue :: LValue}
+    | Decr  {_decrLValue :: LValue}
     | Ret   {_retExpr :: Expr}
     | VRet
     | Cond { _condExpr :: Expr, _condBl :: Block }
@@ -173,12 +175,21 @@ instance Show AItem where
     show (NoInit ident) = absShow ident
     show (Init ident expr) = absShow ident ++ " = " ++ absShow expr
 
+type LValue = AbsPos ALValue
+data ALValue = LVar Ident | LMember Ident Ident
+  deriving Eq
+
+instance Show ALValue where
+    show (LVar ident) = absShow ident
+    show (LMember obj attr) = absShow obj ++ "." ++ absShow attr
+
 type Type = AbsPos AType
 data AType
     = Int
     | Str
     | Bool
     | Void
+    | ClsType Ident
     | Fun Type [Type]
   deriving Eq
 
@@ -187,6 +198,7 @@ instance Show AType where
     show Str = colorize [SetColor Foreground Vivid Magenta] "string"
     show Bool = colorize [SetColor Foreground Vivid Cyan] "boolean"
     show Void = colorize [SetColor Foreground Vivid Cyan] "void"
+    show (ClsType ident) = colorize [SetColor Foreground Vivid Red] (ident ^. aa . identString)
     show (Fun t args) = "(" ++ intercalate ", " (map absShow args) ++ ")"
         ++ colorize [SetColor Foreground Dull Yellow] " -> " ++ absShow t
 
@@ -195,7 +207,10 @@ data AExpr
     = EVar Ident
     | ELitInt Integer
     | ELitBool Bool
+    | ENull Type
     | EApp Ident [Expr]
+    | EMember Member
+    | ENew Type
     | EString (Maybe String)
     | Neg Expr
     | Not Expr
@@ -210,7 +225,10 @@ instance Show AExpr where
     show (EVar ident) = absShow ident
     show (ELitInt int) = colorize [SetColor Foreground Dull Blue] $ show int
     show (ELitBool bool) = colorize [SetColor Foreground Dull Cyan] $ if bool then "true" else "false"
+    show (ENull t) = "(" ++ absShow t ++ ")null"
     show (EApp ident args) = absShow ident ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
+    show (EMember m) = absShow m
+    show (ENew t) = colorize [SetColor Foreground Vivid Green] "new " ++ absShow t
     show (EString str) = colorize [SetColor Foreground Dull Magenta] (fromMaybe "<EMPTY STRING>" str)
     show (Neg expr) = "-" ++ absShow expr
     show (Not expr) = "!" ++ absShow expr
@@ -219,6 +237,16 @@ instance Show AExpr where
     show (ERel e1 op e2) = absShow e1 ++ " " ++ absShow op ++ " " ++ absShow e2
     show (EAnd e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " && " ++ absShow e2
     show (EOr e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " || " ++ absShow e2
+
+type Member = AbsPos AMember
+data AMember
+    = MemberAttr Ident Ident
+    | MemberMethod Ident Ident [Expr]
+  deriving Eq
+
+instance Show AMember where
+    show (MemberAttr obj attr) = absShow obj ++ "." ++ absShow attr
+    show (MemberMethod obj method args) = absShow obj ++ "." ++ absShow method ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
 
 type MulOp = AbsPos AMulOp
 data AMulOp = Times | Div | Mod
@@ -253,7 +281,6 @@ instance Show ARelOp where
         NEQ -> "!="
 
 
-makeLenses ''AIdent
 makeLenses ''AProgram
 makeLenses ''AFnDef
 makeLenses ''AClsDef
