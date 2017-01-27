@@ -57,7 +57,7 @@ main = getArgs >>= \case
 
                                 asmFile <- (`replaceExtension` "s") <$> asks sourceFilename
                                 lift $ writeFile asmFile code
-                                _ <- lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -static -o " ++ dropExtension asmFile
+                                _ <- lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -o " ++ dropExtension asmFile
                                 return ()
                             Left err -> failAndShowError err
                     Left err -> failAndShowError err
