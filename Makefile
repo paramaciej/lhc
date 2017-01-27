@@ -3,7 +3,7 @@ all: lib/runtime.o latc latc_x86_64
 stack:
 	wget -O stack.tar.gz https://www.stackage.org/stack/linux-x86_64
 	tar xf stack.tar.gz
-	rm -rf stack-local
+	rm -rf stack-local stack.tar.gz
 	mv stack-1* stack-local
 	./stack-local/stack setup
 
