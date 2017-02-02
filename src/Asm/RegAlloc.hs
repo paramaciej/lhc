@@ -153,8 +153,8 @@ instance Show AsmStmt where
     show (Cmp v1 v2)    = sufFromVal v1 "cmp" ++ show v1 ++ ", " ++ show v2
     show (Jmp label)    = align "jmp" ++ label
     show (Jz  label)    = align "jz" ++ label
-    show (Push val)     = sufFromVal val "push" ++ show val
-    show (Pop loc)      = sufFromVal (Location loc) "pop" ++ show loc
+    show (Push val)     = align "pushq" ++ show val
+    show (Pop loc)      = align "popq" ++ show loc
     show (Call fun)     = align "call" ++ fun
     show LeaveRet       = align "leave" ++ "\n" ++ align "ret"
     show (IMul v1 v2)   = sufFromVal v1 "imul" ++ show v1 ++ ", " ++ show v2
