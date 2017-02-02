@@ -196,7 +196,7 @@ emitExprIn label stmt = do
     aux :: QBlock -> QBlock
     aux qBlock = case qBlock ^. out of
             Nothing -> qBlock & blockStmts %~ cons stmt
-            Just _ -> error "TRYING TO ADD A STMT TO A QUITED BLOCK"
+            Just _ -> qBlock
 
 freshLoc :: RegType -> GenM Address
 freshLoc regType = do
