@@ -3,7 +3,7 @@ module Asm.Utils where
 
 import Asm.RegAlloc
 import qualified Quattro.Types as Q
-import Quattro.Types (RegType (Int))
+import qualified Utils.Abstract as A
 import Utils.Show
 import Utils.Verbose
 
@@ -107,14 +107,17 @@ getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
                 return reg
             [] -> do
                 oldAddr <- fromJust . fromJust <$> use (registers . at RDX)
-                stackLoc <- getFreeStack (oldAddr ^. Q.addressType)
+                stackLoc <- getFreeStackForType (oldAddr ^. Q.addressType)
                 source@(Location regLoc) <- fromJust <$> valueFromReg RDX
                 asmStmts %= (++ [Mov source stackLoc])
                 stack . at oldAddr . _Just %= S.delete regLoc . S.insert stackLoc
                 registers . at RDX .= Just Nothing
                 return RDX
 
-getFreeStack :: RegType -> AllocM RealLoc
+getFreeStackForType :: A.Type -> AllocM RealLoc
+getFreeStackForType = getFreeStack . Q.typeToRegType
+
+getFreeStack :: Q.RegType -> AllocM RealLoc
 getFreeStack typ = do
     allLocs <- (S.unions . M.elems) <$> use stack
     let stackLocks = S.map (\(Stack _ x) -> x) $ S.filter (not . isRegLoc) allLocs
@@ -124,11 +127,11 @@ getFreeStack typ = do
 
 
 valueMatchRegister :: Reg -> Q.Value -> Register
-valueMatchRegister reg (Q.Literal _) = Register Int reg
+valueMatchRegister reg (Q.Literal _) = Register Q.Int reg
 valueMatchRegister reg (Q.Location addr) = addressMatchRegister reg addr
 
 addressMatchRegister :: Reg -> Q.Address -> Register
-addressMatchRegister reg addr = Register (addr ^. Q.addressType) reg
+addressMatchRegister reg addr = Register (Q.typeToRegType $ addr ^. Q.addressType) reg
 
 valueFromReg :: Reg -> AllocM (Maybe Value)
 valueFromReg reg = do
@@ -151,7 +154,7 @@ fixStack alive = do
     fix :: StackFixStmt -> AllocM ()
     fix (addr, from, to) = do
         let rax = RegisterLoc $ addressMatchRegister RAX addr
-        let t = addr ^. Q.addressType
+        let t = Q.typeToRegType $ addr ^. Q.addressType
         asmStmts %= (++ [Mov (Location (Stack t from)) rax, Mov (Location rax) (Stack t to)])
 
 movValToAddrLocatedIn :: Q.Value -> Q.Address -> S.Set RealLoc -> AllocM ()
@@ -173,8 +176,9 @@ restoreStack alive = do
     ss <- use stack
     let graph = M.fromList $ zip [0..] $ map (getStackFromAddr ss) (S.elems alive)
     let addrMap = M.fromList $ zip [0..] (S.elems alive)
-    let movStToReg st reg = Mov (Location $ Stack ((addrMap M.! st) ^. Q.addressType) st) (RegisterLoc $ addressMatchRegister reg (addrMap M.! st))
-    let movRegToSt reg st = Mov (Location $ RegisterLoc $ addressMatchRegister reg (addrMap M.! st)) (Stack ((addrMap M.! st) ^. Q.addressType) st)
+    let stType st = Q.typeToRegType $ (addrMap M.! st) ^. Q.addressType
+    let movStToReg st reg = Mov (Location $ Stack (stType st) st) (RegisterLoc $ addressMatchRegister reg (addrMap M.! st))
+    let movRegToSt reg st = Mov (Location $ RegisterLoc $ addressMatchRegister reg (addrMap M.! st)) (Stack (stType st) st)
 
     forM_ (getCycles graph) $ \cycle -> asmStmts %= (
         ++ [movStToReg (last cycle) RAX]

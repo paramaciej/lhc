@@ -191,7 +191,7 @@ data AType
     | Void
     | ClsType Ident
     | Fun Type [Type]
-  deriving Eq
+  deriving (Eq, Ord)
 
 instance Show AType where
     show Int = colorize [SetColor Foreground Vivid Blue] "int"
@@ -291,6 +291,7 @@ makeLenses ''AProgram
 makeLenses ''AFnDef
 makeLenses ''AClsDef
 makeLenses ''AClassBody
+makeLenses ''AClassStmt
 makeLenses ''AArg
 makeLenses ''ABlock
 makeLenses ''AStmt

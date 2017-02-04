@@ -80,7 +80,7 @@ genAndAllocStmt stmtWithAlive = do
                 let reg = argRegs `genericIndex` nr
                 registers . at reg .= Just (Just addr)
                 stack . at addr .= Just (S.singleton (RegisterLoc $ addressMatchRegister reg addr))
-            else stack . at addr .= Just (S.singleton (Stack (addr ^. Q.addressType) (3 - nr))) -- we want to refer stack above RBP
+            else stack . at addr .= Just (S.singleton (Stack (Q.typeToRegType (addr ^. Q.addressType)) (3 - nr))) -- we want to refer stack above RBP
         Q.BinStmt addr op val1 val2 -> case op of
             Q.Add -> case Q.valType val1 of
                 Q.Int -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
@@ -104,6 +104,7 @@ genAndAllocStmt stmtWithAlive = do
                     lift $ roStrings %= M.insert strNumber str
                     return strNumber
             asmStmts %= (++ [Mov (StrLiteral nr) loc])
+        Q.New _ _ -> undefined -- TODO
     killDead stmtWithAlive
     showStmtGeneratedCode stmtWithAlive
     unlines . map show . drop prevStmts <$> use asmStmts >>= \case

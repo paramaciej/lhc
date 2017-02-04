@@ -4,31 +4,67 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
 import Data.List
+import Data.Maybe
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 import Quattro.Types
 import Quattro.Generator
 import qualified Utils.Abstract as A
 import Utils.Show
 import Utils.Verbose
+import Utils.Types
 
 type ValM = ExceptT String CompilerOptsM
 
 generateValidatedQuattro :: A.Program -> ValM ProgramCode
 generateValidatedQuattro program = do
-    let initialState = QuattroSt M.empty Nothing 0 M.empty 1 1 funReturns
+    let initialState = QuattroSt M.empty Nothing 0 M.empty 1 1 funReturns classInfo
     finalState <- lift $ execStateT (genProgram program) initialState
     validateQuattro finalState
   where
     funReturns = M.fromList $ runtimes ++ map aux (program ^. A.aa . A.programFunctions ^.. traverse . A.aa)
-    aux fnDef = (fnDef ^. A.fnDefIdent, typeToRegType (fnDef ^. A.fnDefType))
+    aux fnDef = (fnDef ^. A.fnDefIdent, fnDef ^. A.fnDefType)
     runtimes =
-        [ runtimeFun "printInt"     Int
-        , runtimeFun "printString"  Int
-        , runtimeFun "error"        Int
-        , runtimeFun "readInt"      Int
-        , runtimeFun "readString"   Ptr]
-    runtimeFun name retType = (A.makeAbs (A.Ident name), retType)
+        [ runtimeFun "printInt"     A.Int
+        , runtimeFun "printString"  A.Int
+        , runtimeFun "error"        A.Int
+        , runtimeFun "readInt"      A.Int
+        , runtimeFun "readString"   A.Str]
+    runtimeFun name retType = (A.makeAbs (A.Ident name), A.makeAbs retType)
+    classInfo = M.fromList $ map xxx (program ^. A.aa . A.programClasses ^.. traverse . A.aa)
+    xxx clsDef = ( clsDef ^. A.clsDefIdent
+                 , ClsInfo
+                    (createEnumeratedMap $ getClsAttrs clsDef)
+                    (createEnumeratedMap $ getClsMethods clsDef)
+                    (clsDef ^. A.clsDefExtend)
+                 )
+      where
+        createEnumeratedMap :: [(A.Ident, A.Type)] -> M.Map A.Ident (A.Type, Integer)
+        createEnumeratedMap = M.fromList . map (\(nr, (i, t)) -> (i, (t, nr))) . zip [0..]
+
+        getClsAttrs :: A.AClsDef -> [(A.Ident, A.Type)]
+        getClsAttrs clsDef = case clsDef ^. A.clsDefExtend of
+            Just super -> superAttrs super ++ thisAttrs clsDef
+            Nothing -> thisAttrs clsDef
+
+        getClsMethods :: A.AClsDef ->  [(A.Ident, A.Type)]
+        getClsMethods clsDef = case clsDef ^. A.clsDefExtend of
+            Just super -> superMethods super ++ filter (\(i, _) -> not (i `S.member` superMethodsSet super)) (thisMethods clsDef)
+            Nothing -> thisMethods clsDef
+
+        thisAttrs clsDef = foldr attrAux [] (clsDef ^. A.clsDefBody . A.aa . A.classBodyStmts ^.. traverse . A.aa)
+        attrAux stmt acc = case stmt of
+            A.Method{} -> acc
+            A.Attr t items -> acc ++ map (\(A.AttrItem i) -> (i, t)) (items ^.. traverse . A.aa)
+        thisMethods clsDef = foldr methodAux [] (clsDef ^. A.clsDefBody . A.aa . A.classBodyStmts ^.. traverse . A.aa)
+        methodAux stmt acc = case stmt of
+            A.Attr{} -> acc
+            A.Method t ident args _ -> acc ++ [(ident, makeFunType t args)]
+        superAttrs = getClsAttrs . getClsDef
+        superMethods = getClsMethods . getClsDef
+        superMethodsSet = S.fromList . map fst . superMethods
+        getClsDef ident = fromJust $ find (\c -> c ^. A.clsDefIdent == ident) (program ^. A.aa . A.programClasses ^.. traverse . A.aa)
 
 
 

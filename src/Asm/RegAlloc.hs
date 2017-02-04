@@ -209,7 +209,7 @@ isRegLoc _ = False
 initialAllocSt :: Q.AliveSet -> AllocSt
 initialAllocSt inSet = AllocSt (M.fromList $ zipWith aux (S.toList inSet) [0..]) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) []
   where
-    aux addr int = (addr, S.singleton $ Stack (addr ^. Q.addressType) int)
+    aux addr int = (addr, S.singleton $ Stack (Q.typeToRegType (addr ^. Q.addressType)) int)
 
 
 stmtsWithAlive :: M.Map Q.Label Q.AliveSet -> Q.ClearBlock -> [StmtWithAlive]

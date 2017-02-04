@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Quattro.Types where
 
@@ -30,6 +31,10 @@ data Stmt
     | UniStmt Address UniOp Value
     | Call Address String [Value]
     | StringLit Address (Maybe String)
+    | New Address A.Type
+    | CallVirtual Address Address Integer [Value]
+    | SetAttr Address Address Integer Value
+    | GetAttr Address Address Integer
 
 data OutStmt
     = Goto Label
@@ -42,7 +47,7 @@ data RegType = Ptr | Int
 
 data Address = Address
     { _addressLoc :: Integer
-    , _addressType :: RegType
+    , _addressType :: A.Type
     } deriving (Eq, Ord)
 
 type Label = Integer
@@ -63,7 +68,7 @@ data QCode = QCode
 
 data LocalInfo = LocalInfo
     { _address :: M.Map Label Address
-    , _locType :: RegType
+    , _locType :: A.Type
     , _defIn :: DefPlace
     , _prev :: Maybe LocalInfo
     } deriving Show
@@ -75,7 +80,14 @@ data QuattroSt = QuattroSt
     , _funCode :: M.Map A.Ident QCode
     , _addressMax :: Integer
     , _labelMax :: Integer
-    , _funRetTypes :: M.Map A.Ident RegType
+    , _funRetTypes :: M.Map A.Ident A.Type
+    , _classInfo :: M.Map A.Ident ClsInfo
+    } deriving Show
+
+data ClsInfo = ClsInfo
+    { _qAttrs :: M.Map A.Ident (A.Type, Integer)
+    , _qMethods :: M.Map A.Ident (A.Type, Integer)
+    , _qSuperClass :: Maybe A.Ident
     } deriving Show
 
 type GenM = StateT QuattroSt CompilerOptsM
@@ -149,6 +161,11 @@ instance Show Stmt where
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1
     show (Call a str vs)        = show a ++ yellow " <- call " ++ str ++ " (" ++ intercalate ", " (map show vs) ++ ")"
     show (StringLit a str)      = show a ++ yellow " <- " ++ red (fromMaybe "<EMPTY STRING>" str)
+    show (New a typ)            = show a ++ yellow " <- new " ++ A.absShow typ
+    show (CallVirtual a o n vs) = show a ++ yellow " <- call " ++ show o ++ yellow ("." ++ show n) ++ " ("
+        ++ intercalate ", " (map show vs) ++ ")"
+    show (SetAttr a o n v)      = show a ++ yellow " <- " ++ show o ++ yellow ("." ++ show n ++ " %~ ") ++ show v
+    show (GetAttr a o n)        = show a ++ yellow " <- " ++ show o ++ yellow ("." ++ show n)
 
 
 instance Show OutStmt where
@@ -166,6 +183,7 @@ makeLenses ''Address
 makeLenses ''QBlock
 makeLenses ''QCode
 makeLenses ''LocalInfo
+makeLenses ''ClsInfo
 makeLenses ''QuattroSt
 
 makeLenses ''ProgramCode
@@ -173,5 +191,14 @@ makeLenses ''FunctionCode
 makeLenses ''Block
 
 valType :: Value -> RegType
-valType (Location (Address _ x)) = x
+valType (Location (Address _ x)) = typeToRegType x
 valType (Literal _) = Int
+
+
+typeToRegType :: A.Type -> RegType
+typeToRegType = A.ignorePos $ \case
+    A.Int   -> Int
+    A.Bool  -> Int
+    A.Void  -> Int
+    A.Str   -> Ptr
+    _       -> error "fun type as reg!"

@@ -127,6 +127,8 @@ checkProgram :: CheckSt ()
 checkProgram = do
     insertTopTypes
     insertClassInfos
+    clsDefs <- use $ wholeProgram . aa . programClasses
+    mapM_ checkClass clsDefs
     checkMain
     fnDefs <- use $ wholeProgram . aa . programFunctions
     mapM_ checkFunction fnDefs
@@ -142,15 +144,55 @@ checkMain = use (symbols . at (makeAbs $ Ident "main")) >>= \case
                     ++ ", but it is of type " ++ absShow (main ^. typ))  >>= throwError
         Nothing -> throwError $ red "Error: " ++ "File doesn't contain the `main` function!"
 
+checkClass :: ClsDef -> CheckSt ()
+checkClass cls = mapM_ (checkClassStmt cls) (cls ^. aa . clsDefBody . aa . classBodyStmts)
+
+checkClassStmt :: ClsDef -> ClassStmt -> CheckSt ()
+checkClassStmt cls stmt = case stmt ^. aa of
+    Attr _ _ -> return () -- TODO chyba mogę, bo robię checki na to już w insertClassInfos
+    Method t name args block -> do
+        case cls ^. aa . clsDefExtend of
+            Just super -> use (classes . at super . singular _Just . methods . at name) >>= \case
+                Just superType -> do
+                    let thisType = makeFunType t args
+                    typeMatch <- thisType `isSubTypeOf` superType
+                    unless typeMatch $ contextError name ("Method must be of the same type as method from superclass!\n"
+                        ++ "\texprected: " ++ show superType ++ "\n\tactual: " ++ show thisType ++ "") >>= throwError
+                Nothing -> return ()
+            Nothing -> return ()
+        putClassAttrsIntoState cls block
+        putArgsIntoState block args
+        checkBlock t block
+      where
+        putClassAttrsIntoState cls block = do
+            attrs <- clsAllAttrs (cls ^. aa . clsDefIdent)
+            mapM_ aux (M.toAscList attrs)
+          where
+            aux (i, t) = putItemIntoState t i cls (InBlock block)
+        clsAllAttrs :: Ident -> CheckSt (M.Map Ident Type)
+        clsAllAttrs clsIdent = do
+            defInThis <- use $ classes . at clsIdent . singular _Just . attributes
+            defInSuper <- use (classes . at clsIdent . singular _Just . superClass) >>= \case
+                Just super -> clsAllAttrs super
+                Nothing -> return M.empty
+            return $ defInThis `M.union` defInSuper
+
+
+checkMethodReturn :: ClassStmt -> CheckSt ()
+checkMethodReturn clsStmt = unless methodIsVoid $ case methodHasReturn (simplifyClsStmt clsStmt) of
+    Right () -> return ()
+    Left err -> throwError err
+  where
+    methodIsVoid = clsStmt ^. aa . singular methodRetType == makeAbs Void
+
 checkFunReturn :: FnDef -> CheckSt ()
-checkFunReturn fnDef = unless (fnDef ^. aa . fnDefType == makeAbs Void) $ case hasReturn (simplifyFnDef fnDef) of
+checkFunReturn fnDef = unless (fnDef ^. aa . fnDefType == makeAbs Void) $ case fnHasReturn (simplifyFnDef fnDef) of
     Right () -> return ()
     Left err -> throwError err
 
 checkFunction :: FnDef -> CheckSt ()
 checkFunction fnDef = do
-    let defPlace = InBlock $ fnDef ^. aa . fnDefBlock
-    mapM_ (\arg -> putItemIntoState (arg ^. aa . argType) (arg ^. aa . argIdent) arg defPlace) (fnDef ^. aa . fnDefArgs)
+    putArgsIntoState (fnDef ^. aa . fnDefBlock) (fnDef ^. aa . fnDefArgs)
     checkBlock (fnDef ^. aa . fnDefType) (fnDef ^. aa . fnDefBlock)
 
 checkBlock :: Type -> Block -> CheckSt ()
@@ -223,8 +265,8 @@ getExprType expr = case expr ^. aa of
         Plus  -> binOpType Int Int e1 e2 `catchError` \_ -> binOpType Str Str e1 e2
         Minus -> binOpType Int Int e1 e2
     ERel e1 op e2 -> case op ^. aa of
-        EQU -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2 `catchError` \_ -> binOpType Bool Str e1 e2
-        NEQ -> binOpType Bool Int e1 e2 `catchError` \_ -> binOpType Bool Bool e1 e2 `catchError` \_ -> binOpType Bool Str e1 e2
+        EQU -> eqRelOp e1 e2
+        NEQ -> eqRelOp e1 e2
         _   -> binOpType Bool Int e1 e2
     EAnd e1 e2 -> binOpType Bool Bool e1 e2
     EOr e1 e2  -> binOpType Bool Bool e1 e2
@@ -234,6 +276,17 @@ getExprType expr = case expr ^. aa of
         constrainExprType (makeAbs argsType) e1
         constrainExprType (makeAbs argsType) e2
         return (makeAbs retType)
+    clsRelOpType :: Expr -> Expr -> CheckSt Type
+    clsRelOpType e1 e2 = do
+        t <- getExprType e1
+        case t ^. aa of
+            ClsType _ -> constrainExprType t e2 >> return (makeAbs Bool)
+            _ -> contextError e1 "Expression in ==/!== must be of int, boolean, string or class type!" >>= throwError
+    eqRelOp :: Expr -> Expr -> CheckSt Type
+    eqRelOp e1 e2 = binOpType Bool Int e1 e2
+        `catchError` const (binOpType Bool Bool e1 e2)
+        `catchError` const (binOpType Bool Str e1 e2)
+        `catchError` const (clsRelOpType e1 e2)
 
 
 getIdentType :: Ident -> CheckSt Type
@@ -272,17 +325,17 @@ constrainExprType expectedType expr = do
     accepted <- actualType `isSubTypeOf` expectedType
     unless accepted $ contextError expr ("Expression `" ++ absShow expr ++ "` was expected to be a subtype of "
         ++ absShow expectedType ++ " but it is of type " ++ absShow actualType ++ "!") >>= throwError
-  where
-    isSubTypeOf :: Type -> Type -> CheckSt Bool
-    sub `isSubTypeOf` sup = case (sub ^. aa, sup ^. aa) of
-        (ClsType subIdent, ClsType supIdent) -> if subIdent == supIdent
-            then return True
-            else use (classes . at subIdent) >>= \case
-                Just info -> case info ^. superClass of
-                    Just subSuper -> makeAbs (ClsType subSuper) `isSubTypeOf` sup
-                    Nothing -> return False
+
+isSubTypeOf :: Type -> Type -> CheckSt Bool
+sub `isSubTypeOf` sup = case (sub ^. aa, sup ^. aa) of
+    (ClsType subIdent, ClsType supIdent) -> if subIdent == supIdent
+        then return True
+        else use (classes . at subIdent) >>= \case
+            Just info -> case info ^. superClass of
+                Just subSuper -> makeAbs (ClsType subSuper) `isSubTypeOf` sup
                 Nothing -> return False
-        (subType, supType) -> return $ subType == supType
+            Nothing -> return False
+    (subType, supType) -> return $ subType == supType
 
 funcApplication :: Type -> [Type] -> CheckSt (Maybe Type)
 funcApplication funType types = do
@@ -304,6 +357,11 @@ putItemIntoState t ident context defPlace = case t ^. aa of
                 else let prevPos = (show . fromJust . view (defIdent . pos)) symbolInfo in contextError context
                     ("Identifier `" ++ absShow ident ++ "` is already declared (at " ++ prevPos ++ ")!")
                         >>= throwError
+
+putArgsIntoState :: Block -> [Arg] -> CheckSt ()
+putArgsIntoState block = mapM_ aux
+  where
+    aux arg = putItemIntoState (arg ^. aa . argType) (arg ^. aa . argIdent) arg (InBlock block)
 
 -- error handling
 getProgramLine :: Int -> CheckSt CStr
