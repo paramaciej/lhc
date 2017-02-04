@@ -17,4 +17,8 @@ clean_bnfc:
 	rm -f bnfc src/AbsLatte.* src/DocLatte.* src/ErrM.hs src/LexLatte.* src/ParLatte.* src/PrintLatte.* src/SkelLatte.* src/TestLatte.*
 
 clean: clean_bnfc
+	stack clean
 	rm -f latc latc_x86_64 lib/runtime.o
+
+distclean: clean
+	rm -rf .stack-work

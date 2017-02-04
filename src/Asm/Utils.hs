@@ -3,7 +3,7 @@ module Asm.Utils where
 
 import Asm.RegAlloc
 import qualified Quattro.Types as Q
-import Quattro.Types (RegType (Ptr, Int))
+import Quattro.Types (RegType (Int))
 import Utils.Show
 import Utils.Verbose
 

@@ -3,6 +3,7 @@ module Asm.Operators where
 
 import Control.Lens
 import Control.Monad.State
+import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe
 
@@ -39,12 +40,26 @@ genBinOpWithReplacement :: Q.Address -> Q.Value -> Q.Address -> OrdinaryOp -> Al
 genBinOpWithReplacement newAddr (Q.Location argAddr) destAddr op = do
     (vArg, lDest) <- atLeastOneReg argAddr destAddr
     asmStmts %= (++ [BinStmt op vArg lDest])
+    clearLocationAfterBinStmt destAddr lDest
     replaceAddr destAddr newAddr
 genBinOpWithReplacement newAddr (Q.Literal literal) destAddr op = do
     let vArg = IntLiteral literal
     lDest <- fastestReadLoc destAddr
     asmStmts %= (++ [BinStmt op vArg lDest])
+    clearLocationAfterBinStmt destAddr lDest
     replaceAddr destAddr newAddr
+
+
+clearLocationAfterBinStmt :: Q.Address -> RealLoc -> AllocM ()
+clearLocationAfterBinStmt destAddr destLoc = do
+    registers %= M.map clearRegs
+    stack . at destAddr .= Just (S.singleton destLoc)
+    case destLoc of
+        RegisterLoc (Register _ reg) -> registers . at reg .= Just (Just destAddr)
+        _ -> return ()
+  where
+    clearRegs Nothing = Nothing
+    clearRegs (Just a) = if a == destAddr then Nothing else Just a
 
 
 genBinOpWithMov :: Q.Address -> OrdinaryOp -> Q.Value -> Q.Value -> AllocM ()

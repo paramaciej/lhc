@@ -292,16 +292,18 @@ funcApplication funType types = do
         else Nothing
 
 putItemIntoState :: Type -> Ident -> AbsPos a -> DefPlace -> CheckSt ()
-putItemIntoState t ident context defPlace = do
-    mSymbolInfo <- use $ symbols . at ident
-    let mod = modify $ over symbols $ M.insert ident (SymbolInfo t ident defPlace mSymbolInfo)
-    case mSymbolInfo of
-        Nothing -> mod
-        Just symbolInfo -> if symbolInfo ^. defInBlock /= defPlace
-            then mod
-            else let prevPos = (show . fromJust . view (defIdent . pos)) symbolInfo in contextError context
-                ("Identifier `" ++ absShow ident ++ "` is already declared (at " ++ prevPos ++ ")!")
-                    >>= throwError
+putItemIntoState t ident context defPlace = case t ^. aa of
+    Void -> contextError context "Cannot declare variables of type void!" >>= throwError
+    _ -> do
+        mSymbolInfo <- use $ symbols . at ident
+        let mod = modify $ over symbols $ M.insert ident (SymbolInfo t ident defPlace mSymbolInfo)
+        case mSymbolInfo of
+            Nothing -> mod
+            Just symbolInfo -> if symbolInfo ^. defInBlock /= defPlace
+                then mod
+                else let prevPos = (show . fromJust . view (defIdent . pos)) symbolInfo in contextError context
+                    ("Identifier `" ++ absShow ident ++ "` is already declared (at " ++ prevPos ++ ")!")
+                        >>= throwError
 
 -- error handling
 getProgramLine :: Int -> CheckSt CStr
