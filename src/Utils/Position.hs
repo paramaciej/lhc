@@ -151,13 +151,11 @@ instance Positioned Type where
     position Fun {}     = error "impossible happened"
 
 instance Positioned Expr where
-    position (EVar i)           = position i
+    position (ERVal rval)       = position rval
     position (ELitInt int)      = position int
     position (ELitTrue true)    = position true
     position (ELitFalse false)  = position false
     position (ENull pB _ pNull) = combineBeginEnd pB pNull
-    position (EApp i _ _ par)   = combineBeginEnd i par
-    position (EMember member)   = position member
     position (ENew n cls)       = combineBeginEnd n cls
     position (EString str)      = position str
     position (Neg neg expr)     = combineBeginEnd neg expr
@@ -169,9 +167,9 @@ instance Positioned Expr where
     position (EOr e1 _ e2)      = combineBeginEnd e1 e2
     position (ECoerc pB _ pE)   = combineBeginEnd pB pE
 
-instance Positioned Member where
-    position (MemberAttr i _ n) = combineBeginEnd i n
-    position (MemberMethod i _ _ _ _ end) = combineBeginEnd i end
+instance Positioned RValue where
+    position (RLValue lval)     = position lval
+    position (RApp lval _ _ pE) = combineBeginEnd lval pE
 
 instance Positioned AddOp where
     position (Plus x)   = position x

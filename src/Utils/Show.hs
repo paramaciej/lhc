@@ -9,7 +9,6 @@ module Utils.Show
     , red
     , green
     , yellow
-    , dullGreen
     ) where
 
 import System.Console.ANSI
@@ -208,13 +207,11 @@ instance ColorShow
     stShow Fun {}       = error "impossible happened"
 
 instance ColorShow Expr where
-    stShow (EVar i)                 = stShow i
+    stShow (ERVal rval)             = stShow rval
     stShow (ELitInt int)            = stShow int
     stShow (ELitTrue true)          = stShow true
     stShow (ELitFalse false)        = stShow false
     stShow (ENull parB typ parNull) = stShow parB >> stShow typ >> stShow parNull
-    stShow (EApp i parB exprs parE) = stShow i >> stShow parB >> csvShow exprs >> stShow parE
-    stShow (EMember member)         = stShow member
     stShow (ENew new typ)           = stShow new >> stShow typ
     stShow (EString str)            = stShow str
     stShow (Neg neg expr)           = stShow neg >> stShow expr
@@ -226,9 +223,9 @@ instance ColorShow Expr where
     stShow (EOr e1 op e2)           = stShow e1 >> stShow op >> stShow e2
     stShow (ECoerc parB expr parE)  = stShow parB >> stShow expr >> stShow parE
 
-instance ColorShow Member where
-    stShow (MemberAttr obj dot attr) = stShow obj >> stShow dot >> stShow attr
-    stShow (MemberMethod obj d m pB args pE) = stShow obj >> stShow d >> stShow m >> stShow pB >> csvShow args >> stShow pE
+instance ColorShow RValue where
+    stShow (RLValue lval) = stShow lval
+    stShow (RApp lval pB args pE) = stShow lval >> stShow pB >> csvShow args >> stShow pE
 
 instance ColorShow AddOp where
     stShow (Plus x)     = stShow x
@@ -256,6 +253,3 @@ green = colorize [SetColor Foreground Vivid Green]
 
 yellow :: String -> String
 yellow = colorize [SetColor Foreground Vivid Yellow]
-
-dullGreen :: String -> String
-dullGreen = colorize [SetColor Foreground Dull Green]

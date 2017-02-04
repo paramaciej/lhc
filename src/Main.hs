@@ -40,8 +40,8 @@ main = getArgs >>= \case
                 verbosePrint $ "Parsed source:\n" ++ fullShow program
 
                 programValid (toA program) >>= \case
-                    Right () -> do
-                        let simplified = simplifyProgram (toA program)
+                    Right newProgram -> do
+                        let simplified = simplifyProgram newProgram
                         verbosePrint $ red "SIMPLY:\n" ++ show simplified -- TODO tymczasowo dodane
                         runExceptT (generateValidatedQuattro simplified) >>= \case
                             Right quattro -> do

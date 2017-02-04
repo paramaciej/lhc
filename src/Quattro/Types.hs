@@ -163,7 +163,7 @@ instance Show Stmt where
     show (StringLit a str)      = show a ++ yellow " <- " ++ red (fromMaybe "<EMPTY STRING>" str)
     show (New a typ)            = show a ++ yellow " <- new " ++ A.absShow typ
     show (CallVirtual a o n vs) = show a ++ yellow " <- call " ++ show o ++ yellow ("." ++ show n) ++ " ("
-        ++ intercalate ", " (map show vs) ++ ")"
+                                    ++ intercalate ", " (map show vs) ++ ")"
     show (SetAttr a o n v)      = show a ++ yellow " <- " ++ show o ++ yellow ("." ++ show n ++ " %~ ") ++ show v
     show (GetAttr a o n)        = show a ++ yellow " <- " ++ show o ++ yellow ("." ++ show n)
 

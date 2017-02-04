@@ -80,11 +80,11 @@ instance Show AFnDef where
         ++ intercalate ", " (map absShow args) ++ ") " ++ absShow block
 
 instance Show AClsDef where
-    show (ClsDef i mExt body) = green "class " ++ dullGreen (absShow i) ++ ext ++ absShow body
+    show (ClsDef i mExt body) = green "class " ++ red (absShow i) ++ ext ++ absShow body
       where
         ext = case mExt of
             Nothing -> " "
-            Just e -> green " extends " ++ dullGreen (absShow e) ++ " "
+            Just e -> green " extends " ++ red (absShow e) ++ " "
 
 type ClassBody = AbsPos AClassBody
 newtype AClassBody = ClassBody
@@ -176,7 +176,7 @@ instance Show AItem where
     show (Init ident expr) = absShow ident ++ " = " ++ absShow expr
 
 type LValue = AbsPos ALValue
-data ALValue = LVar Ident | LMember Ident Ident
+data ALValue = LVar Ident | LMember LValue Ident
   deriving Eq
 
 instance Show ALValue where
@@ -204,12 +204,10 @@ instance Show AType where
 
 type Expr = AbsPos AExpr
 data AExpr
-    = EVar Ident
+    = ERVal RValue
     | ELitInt Integer
     | ELitBool Bool
     | ENull Type
-    | EApp Ident [Expr]
-    | EMember Member
     | ENew Type
     | EString (Maybe String)
     | Neg Expr
@@ -222,12 +220,10 @@ data AExpr
   deriving Eq
 
 instance Show AExpr where
-    show (EVar ident) = absShow ident
+    show (ERVal rval) = absShow rval
     show (ELitInt int) = colorize [SetColor Foreground Dull Blue] $ show int
     show (ELitBool bool) = colorize [SetColor Foreground Dull Cyan] $ if bool then "true" else "false"
     show (ENull t) = "(" ++ absShow t ++ ")null"
-    show (EApp ident args) = absShow ident ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
-    show (EMember m) = absShow m
     show (ENew t) = colorize [SetColor Foreground Vivid Green] "new " ++ absShow t
     show (EString str) = colorize [SetColor Foreground Dull Magenta] (fromMaybe "<EMPTY STRING>" str)
     show (Neg expr) = "-" ++ absShow expr
@@ -238,10 +234,11 @@ instance Show AExpr where
     show (EAnd e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " && " ++ absShow e2
     show (EOr e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " || " ++ absShow e2
 
-type Member = AbsPos AMember
-data AMember
-    = MemberAttr Ident Ident
-    | MemberMethod Ident Ident [Expr]
+
+type RValue = AbsPos ARValue
+data ARValue
+    = RLValue LValue
+    | RApp LValue [Expr]
   deriving Eq
 
 data ClassMemberKind = AttrKind | MethodKind
@@ -250,9 +247,9 @@ instance Show ClassMemberKind where
     show AttrKind = "attribute"
     show MethodKind = "method"
 
-instance Show AMember where
-    show (MemberAttr obj attr) = absShow obj ++ "." ++ absShow attr
-    show (MemberMethod obj method args) = absShow obj ++ "." ++ absShow method ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
+instance Show ARValue where
+    show (RLValue lval) = absShow lval
+    show (RApp obj args) = absShow obj ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
 
 type MulOp = AbsPos AMulOp
 data AMulOp = Times | Div | Mod

@@ -68,7 +68,7 @@ SExp.      Stmt ::= Expr  PSemicolon ;
 
 LVar.      LValue ::= PIdent ;
 
-LMember.   LValue ::= PIdent PDot PIdent ;
+LMember.   LValue ::= LValue PDot PIdent ;
 
 -- Types ---------------------------------------------------
 
@@ -80,7 +80,7 @@ separator  Type "," ;
 
 -- Expressions ---------------------------------------------
 
-EVar.      Expr6 ::= PIdent ;
+ERVal.     Expr6 ::= RValue ;
 
 ELitInt.   Expr6 ::= PInteger ;
 
@@ -89,10 +89,6 @@ ELitTrue.  Expr6 ::= PTrue ;
 ELitFalse. Expr6 ::= PFalse ;
 
 ENull.     Expr6 ::= PParBegin Type PNull ;
-
-EApp.      Expr6 ::= PIdent PParBegin [Expr] PParEnd ;
-
-EMember.   Expr6 ::= Member ;
 
 ENew.      Expr6 ::= PNew Type ;
 
@@ -123,8 +119,8 @@ ECoerc.    Expr6 ::= PParBegin Expr PParEnd ;
 
 separator  Expr "," ;
 
-MemberAttr.     Member ::= PIdent PDot PIdent ;
-MemberMethod.   Member ::= PIdent PDot PIdent PParBegin [Expr] PParEnd ;
+RLValue.   RValue ::= LValue ;
+RApp.      RValue ::= LValue PParBegin [Expr] PParEnd ;
 
 -- operators -----------------------------------------------
 

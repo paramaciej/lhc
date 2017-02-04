@@ -83,13 +83,11 @@ instance ToAbstract L.Type AType where
     _to L.Fun{}    = error "impossible happened"
 
 instance ToAbstract L.Expr AExpr where
-    _to (L.EVar i) = EVar (toA i)
+    _to (L.ERVal rval) = ERVal (toA rval)
     _to (L.ELitInt (L.PInteger (_, int))) = ELitInt (read int)
     _to (L.ELitTrue _) = ELitBool True
     _to (L.ELitFalse _) = ELitBool False
     _to (L.ENull _ t _) = ENull (toA t)
-    _to (L.EApp i _ exprs _) = EApp (toA i) (map toA exprs)
-    _to (L.EMember member) = EMember (toA member)
     _to (L.ENew _ typ) = ENew (toA typ)
     _to (L.EString (L.PString (_, str))) = EString $ Just str
     _to (L.Neg _ e) = Neg (toA e)
@@ -101,9 +99,9 @@ instance ToAbstract L.Expr AExpr where
     _to (L.EOr e1 _ e2) = EOr (toA e1) (toA e2)
     _to (L.ECoerc _ e _) = _to e
 
-instance ToAbstract L.Member AMember where
-    _to (L.MemberAttr obj _ attr) = MemberAttr (toA obj) (toA attr)
-    _to (L.MemberMethod obj _ method _ args _) = MemberMethod (toA obj) (toA method) (map toA args)
+instance ToAbstract L.RValue ARValue where
+    _to (L.RLValue lval) = RLValue (toA lval)
+    _to (L.RApp lval _ args _) = RApp (toA lval) (map toA args)
 
 instance ToAbstract L.AddOp AAddOp where
     _to (L.Plus _)  = Plus

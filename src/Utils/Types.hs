@@ -22,14 +22,16 @@ import Data.Foldable
 type SymbolsSt = M.Map Ident SymbolInfo
 type CheckSt = ExceptT String (StateT InfoSt CompilerOptsM)
 
-data DefPlace = Global | InBlock Block
+data DefPlace = Global | InBlock Block | InMethod
 
 instance Show DefPlace where
     show Global = "Global"
     show (InBlock block) = "Block at " ++ show (block ^. pos)
+    show InMethod = "InMethod"
 
 instance Eq DefPlace where
     Global == Global = True
+    InMethod == InMethod = True
     InBlock b1 == InBlock b2 = b1 `sameBlock` b2
     _ == _ = False
 
@@ -119,20 +121,23 @@ buildInfoSt = InfoSt buildIns M.empty
         in (ident, SymbolInfo (makeAbs $ Fun (makeAbs retType) (map makeAbs argTypes)) ident Global Nothing)
 
 
-programValid :: Program -> CompilerOptsM (Either String ())
+programValid :: Program -> CompilerOptsM (Either String Program)
 programValid program = evalStateT (runExceptT checkProgram) (buildInfoSt program)
 
 
-checkProgram :: CheckSt ()
+checkProgram :: CheckSt Program
 checkProgram = do
     insertTopTypes
     insertClassInfos
     clsDefs <- use $ wholeProgram . aa . programClasses
-    mapM_ checkClass clsDefs
+    newClsDefs <- mapM checkClass clsDefs
     checkMain
     fnDefs <- use $ wholeProgram . aa . programFunctions
     mapM_ checkFunction fnDefs
     mapM_ checkFunReturn fnDefs
+
+    wholeProgram . aa . programClasses .= newClsDefs
+    use wholeProgram
 
 
 checkMain :: CheckSt ()
@@ -144,12 +149,14 @@ checkMain = use (symbols . at (makeAbs $ Ident "main")) >>= \case
                     ++ ", but it is of type " ++ absShow (main ^. typ))  >>= throwError
         Nothing -> throwError $ red "Error: " ++ "File doesn't contain the `main` function!"
 
-checkClass :: ClsDef -> CheckSt ()
-checkClass cls = mapM_ (checkClassStmt cls) (cls ^. aa . clsDefBody . aa . classBodyStmts)
+checkClass :: ClsDef -> CheckSt ClsDef
+checkClass cls = do
+    newStmts <- mapM (checkClassStmt cls) (cls ^. aa . clsDefBody . aa . classBodyStmts)
+    return $ cls & aa . clsDefBody . aa . classBodyStmts .~ newStmts
 
-checkClassStmt :: ClsDef -> ClassStmt -> CheckSt ()
+checkClassStmt :: ClsDef -> ClassStmt -> CheckSt ClassStmt
 checkClassStmt cls stmt = case stmt ^. aa of
-    Attr _ _ -> return () -- TODO chyba mogę, bo robię checki na to już w insertClassInfos
+    Attr _ _ -> return stmt
     Method t name args block -> do
         case cls ^. aa . clsDefExtend of
             Just super -> use (classes . at super . singular _Just . methods . at name) >>= \case
@@ -160,15 +167,19 @@ checkClassStmt cls stmt = case stmt ^. aa of
                         ++ "\texprected: " ++ show superType ++ "\n\tactual: " ++ show thisType ++ "") >>= throwError
                 Nothing -> return ()
             Nothing -> return ()
-        putClassAttrsIntoState cls block
+        putClassAttrsIntoState cls
         putArgsIntoState block args
-        checkBlock t block
+        newBlock <- checkBlock t block
+        modify $ over symbols $ M.mapMaybe $ \symbolInfo -> if symbolInfo ^. defInBlock == InMethod
+            then symbolInfo ^. prevDef
+            else Just symbolInfo
+        return $ stmt & aa . methodBlock .~ newBlock
       where
-        putClassAttrsIntoState cls block = do
+        putClassAttrsIntoState cls = do
             attrs <- clsAllAttrs (cls ^. aa . clsDefIdent)
             mapM_ aux (M.toAscList attrs)
           where
-            aux (i, t) = putItemIntoState t i cls (InBlock block)
+            aux (i, t) = putItemIntoState t i cls InMethod
         clsAllAttrs :: Ident -> CheckSt (M.Map Ident Type)
         clsAllAttrs clsIdent = do
             defInThis <- use $ classes . at clsIdent . singular _Just . attributes
@@ -190,72 +201,134 @@ checkFunReturn fnDef = unless (fnDef ^. aa . fnDefType == makeAbs Void) $ case f
     Right () -> return ()
     Left err -> throwError err
 
-checkFunction :: FnDef -> CheckSt ()
+checkFunction :: FnDef -> CheckSt FnDef
 checkFunction fnDef = do
     putArgsIntoState (fnDef ^. aa . fnDefBlock) (fnDef ^. aa . fnDefArgs)
-    checkBlock (fnDef ^. aa . fnDefType) (fnDef ^. aa . fnDefBlock)
+    newBlock <- checkBlock (fnDef ^. aa . fnDefType) (fnDef ^. aa . fnDefBlock)
+    return $ fnDef & aa . fnDefBlock .~ newBlock
 
-checkBlock :: Type -> Block -> CheckSt ()
+checkBlock :: Type -> Block -> CheckSt Block
 checkBlock returnType block = do
-    mapM_ checkStmt $ block ^. aa . blockStmts
+    newStmts <- mapM checkStmt $ block ^. aa . blockStmts
     modify $ over symbols $ M.mapMaybe $ \symbolInfo -> if symbolInfo ^. defInBlock == InBlock block
         then symbolInfo ^. prevDef
         else Just symbolInfo
+    return $ block & aa . blockStmts .~ newStmts
   where
+    checkStmt :: Stmt -> CheckSt Stmt
     checkStmt stmt = case stmt ^. aa of
-        Empty -> return ()
-        BStmt bl -> checkBlock returnType bl
-        Decl t items -> forM_ items $ ignorePos $ \case
-            NoInit ident    -> putItemIntoState t ident stmt (InBlock block)
-            Init ident expr -> putItemIntoState t ident stmt (InBlock block) >> constrainExprType t expr
+        Empty -> return stmt
+        BStmt bl -> do
+            newBlock <- checkBlock returnType bl
+            return $ stmt & aa .~ BStmt newBlock
+        Decl t items -> do
+            newItems <- forM items $ ignorePos $ \case
+                NoInit ident    -> putItemIntoState t ident stmt (InBlock block) >> return (makeAbs $ NoInit ident)
+                Init ident expr -> putItemIntoState t ident stmt (InBlock block) >> constrainExprType t expr
+                    >> ((makeAbs . Init ident) <$> selfizeExpr expr)
+            return $ makeAbs $ Decl t newItems
         Ass lval expr -> do
             t <- getLValueType lval
             constrainExprType t expr
+            newLVal <- selfizeLValue lval
+            newExpr <- selfizeExpr expr
+            return $ makeAbs $ Ass newLVal newExpr
         Incr lval -> do
             t <- getLValueType lval
             unless (t == makeAbs Int) $ contextError stmt ("Increment operator requires type " ++ show Int ++ ", but `"
                 ++ absShow lval ++ "` is of type " ++ absShow t) >>= throwError
+            (makeAbs . Incr) <$> selfizeLValue lval
         Decr lval -> do
             t <- getLValueType lval
             unless (t == makeAbs Int) $ contextError stmt ("Decrement operator requires type " ++ show Int ++ ", but `"
                 ++ absShow lval ++ "` is of type " ++ absShow t) >>= throwError
-        Ret expr -> constrainExprType returnType expr
-        VRet -> unless (returnType == makeAbs Void) $ contextError stmt
-            ("Void return in function returning type " ++ absShow returnType ++ "!") >>= throwError
+            (makeAbs . Decr) <$> selfizeLValue lval
+        Ret expr -> constrainExprType returnType expr >> ((makeAbs . Ret) <$> selfizeExpr expr)
+        VRet -> do
+            unless (returnType == makeAbs Void) $ contextError stmt
+                ("Void return in function returning type " ++ absShow returnType ++ "!") >>= throwError
+            return stmt
         Cond expr b -> do
             constrainExprType (makeAbs Bool) expr
-            checkBlock returnType b
+            newB <- checkBlock returnType b
+            newExpr <- selfizeExpr expr
+            return $ makeAbs $ Cond newExpr newB
         CondElse expr b1 b2 -> do
             constrainExprType (makeAbs Bool) expr
-            checkBlock returnType b1
-            checkBlock returnType b2
+            newB1 <- checkBlock returnType b1
+            newB2 <- checkBlock returnType b2
+            newExpr <- selfizeExpr expr
+            return $ makeAbs $ CondElse newExpr newB1 newB2
         While expr b -> do
             constrainExprType (makeAbs Bool) expr
-            checkBlock returnType b
-        SExp expr -> void $ getExprType expr
+            newB <- checkBlock returnType b
+            newExpr <- selfizeExpr expr
+            return $ makeAbs $ While newExpr newB
+        SExp expr -> getExprType expr >> ((makeAbs . SExp) <$> selfizeExpr expr)
+
+selfizeLValue :: LValue -> CheckSt LValue
+selfizeLValue lvalue = lValueDefInMethod lvalue >>= (\x -> if x
+    then return $ prefixLValueWithSelf lvalue
+    else return lvalue)
+  where
+    self = makeAbs $ Ident "_self"
+
+    lValueDefInMethod :: LValue -> CheckSt Bool
+    lValueDefInMethod = ignorePos $ \case
+        LVar ident -> do
+            info <- use $ symbols . at ident . singular _Just
+            return $ info ^. defInBlock == InMethod
+        LMember lval _ -> lValueDefInMethod lval
+
+    prefixLValueWithSelf :: LValue -> LValue
+    prefixLValueWithSelf = ignorePos $ \case
+        LVar ident -> makeAbs $ LMember (makeAbs $ LVar self) ident
+        LMember lval attr -> makeAbs $ LMember (prefixLValueWithSelf lval) attr
+
+selfizeExpr :: Expr -> CheckSt Expr
+selfizeExpr expr = case expr ^. aa of
+    ERVal rvalue -> case rvalue ^. aa of
+        RLValue lvalue -> (makeAbs . ERVal . makeAbs . RLValue) <$> selfizeLValue lvalue
+        RApp lvalue args -> do
+            newArgs <- mapM selfizeExpr args
+            newLValue <- selfizeLValue lvalue
+            return $ makeAbs $ ERVal $ makeAbs $ RApp newLValue newArgs
+    Neg expr -> (makeAbs . Neg) <$> selfizeExpr expr
+    Not expr -> (makeAbs . Not) <$> selfizeExpr expr
+    EMul e1 op e2 -> binSelfize EMul e1 op e2
+    EAdd e1 op e2 -> binSelfize EAdd e1 op e2
+    ERel e1 op e2 -> binSelfize ERel e1 op e2
+    EAnd e1 e2 -> do
+        ne1 <- selfizeExpr e1
+        ne2 <- selfizeExpr e2
+        return $ makeAbs $ EAnd ne1 ne2
+    EOr e1 e2 -> do
+        ne1 <- selfizeExpr e1
+        ne2 <- selfizeExpr e2
+        return $ makeAbs $ EOr ne1 ne2
+    _ -> return expr
+  where
+    binSelfize constructor e1 op e2 = do
+        ne1 <- selfizeExpr e1
+        ne2 <- selfizeExpr e2
+        return $ makeAbs $ constructor ne1 op ne2
+
 
 getExprType :: Expr -> CheckSt Type
 getExprType expr = case expr ^. aa of
-    EVar ident -> getIdentType ident
+    ERVal rvalue -> case rvalue ^. aa of
+        RLValue lvalue -> getLValueType lvalue
+        RApp lvalue args -> do
+            types <- mapM getExprType args
+            funcType <- getLValueAppType lvalue
+            funcApplication funcType types >>= \case
+                Just t -> return t
+                Nothing -> contextError expr ("Application function of type " ++ absShow funcType
+                    ++ " to arguments of types: " ++ intercalate ", " (map absShow types) ++ " failed!") >>= throwError
     ELitInt _ -> return $ makeAbs Int
     ELitBool _ -> return $ makeAbs Bool
     ENull t -> return t
-    EApp ident exprs -> do
-        types <- mapM getExprType exprs
-        funcType <- getIdentType ident
-        funcApplication funcType types >>= \case
-            Just t -> return t
-            Nothing -> contextError expr ("Application function of type " ++ absShow funcType
-                ++ " to arguments of types: " ++ intercalate ", " (map absShow types) ++ " failed!") >>= throwError
-    EMember member -> case member ^. aa of
-        MemberAttr obj attr -> getMemberType AttrKind obj attr
-        MemberMethod obj method exprs -> do
-            argTypes <- mapM getExprType exprs
-            funcType <- getMemberType MethodKind obj method
-            funcApplication funcType argTypes >>= \case
-                Just t -> return t
-                Nothing -> contextError expr ("Application method of type " ++ absShow funcType
-                    ++ " to arguments of types: " ++ intercalate ", " (map absShow argTypes) ++ " failed!") >>= throwError
+
     ENew t -> return t
     EString _ -> return (makeAbs Str)
     Neg e -> constrainExprType (makeAbs Int) e >> return (makeAbs Int)
@@ -294,26 +367,30 @@ getIdentType ident = use (symbols . at ident) >>= \case
     Just info -> return $ info ^. typ
     Nothing -> identUnknown ident >>= throwError
 
-getLValueType :: LValue -> CheckSt Type
-getLValueType lval = case lval ^. aa of
+getLValueKindType :: ClassMemberKind -> LValue -> CheckSt Type
+getLValueKindType kind lval = case lval ^. aa of
     LVar ident -> getIdentType ident
-    LMember obj attr -> getMemberType AttrKind obj attr
+    LMember obj attr -> getMemberType kind obj attr
 
-getMemberType :: ClassMemberKind -> Ident -> Ident -> CheckSt Type
-getMemberType kind obj member = getIdentType obj >>= \typ -> case typ ^. aa of
-    ClsType cls -> use (classes . at cls) >>= \case
-        Just clsInfo -> clsInfoMemberType kind clsInfo member
-        Nothing -> contextError obj ("Class `" ++ absShow cls ++ "` not found!") >>= throwError
+getLValueType :: LValue -> CheckSt Type
+getLValueType = getLValueKindType AttrKind
+
+getLValueAppType :: LValue -> CheckSt Type
+getLValueAppType = getLValueKindType MethodKind
+
+getMemberType :: ClassMemberKind -> LValue -> Ident -> CheckSt Type
+getMemberType kind obj member = getLValueType obj >>= \typ -> case typ ^. aa of
+    ClsType cls -> clsInfoMemberType kind cls member
     _ -> contextError obj ("Identifier `" ++ absShow obj ++ "` must be a class instance!`") >>= throwError
 
-clsInfoMemberType :: ClassMemberKind -> ClassInfo -> Ident -> CheckSt Type
-clsInfoMemberType kind clsInfo attr = case attr `M.lookup` (clsInfo ^. getter) of
-    Just t -> return t
-    Nothing -> case clsInfo ^. superClass of
-        Just super -> use (classes . at super) >>= \case
-            Just superInfo -> clsInfoMemberType kind superInfo attr
-            Nothing -> contextError super ("Class `" ++ absShow super ++ "` is not definied!") >>= throwError
-        Nothing -> contextError attr ("Class hasn't got `" ++ absShow attr ++ "` " ++ show kind ++ "!") >>= throwError
+clsInfoMemberType :: ClassMemberKind -> Ident -> Ident -> CheckSt Type
+clsInfoMemberType kind clsIdent attr = use (classes . at clsIdent) >>= \case
+    Just clsInfo -> case attr `M.lookup` (clsInfo ^. getter) of
+        Just t -> return t
+        Nothing -> case clsInfo ^. superClass of
+            Just super -> clsInfoMemberType kind super attr
+            Nothing -> contextError attr ("Class `" ++ absShow clsIdent ++ "` hasn't got `" ++ absShow attr ++ "` " ++ show kind ++ "!") >>= throwError
+    Nothing -> contextError clsIdent ("Class `" ++ absShow clsIdent ++ "` not found!") >>= throwError
   where
     getter = case kind of
         AttrKind -> attributes
