@@ -36,7 +36,7 @@ fastestReadLoc addr = use (stack . at addr) >>= \case
 fastestReadVal :: Q.Value -> AllocM Value
 fastestReadVal (Q.Literal literal) = return $ IntLiteral literal
 fastestReadVal (Q.Location addr) = Location <$> fastestReadLoc addr
-fastestReadVal (Q.Null _) = return $ IntLiteral 0 -- TODO czym ma być null
+fastestReadVal (Q.Null _) = return $ IntLiteral 0
 
 valAsLocation :: Q.Value -> AllocM RealLoc
 valAsLocation (Q.Location addr) = fastestReadLoc addr
@@ -45,7 +45,7 @@ valAsLocation val@(Q.Literal literal) = do
     let loc = RegisterLoc $ valueMatchRegister reg val
     asmStmts %= (++ [Mov (IntLiteral literal) loc])
     return loc
-valAsLocation (Q.Null typ) = undefined -- undefined
+valAsLocation (Q.Null _) = error "NULL PTR"
 
 atLeastOneRegFromValues :: Q.Value -> Q.Value -> AllocM (Value, RealLoc)
 atLeastOneRegFromValues qVal1 qVal2 = do
@@ -61,7 +61,7 @@ atLeastOneRegFromValues qVal1 qVal2 = do
             _ -> do
                 loc2 <- fastestReadLoc addr
                 return (val1, loc2)
-        Q.Null _ -> undefined -- undefined
+        Q.Null _ -> error "NULL PTR"
 
 atLeastOneReg :: Q.Address -> Q.Address -> AllocM (Value, RealLoc)
 atLeastOneReg addr1 addr2 = do
@@ -95,7 +95,7 @@ movAddrToRegister addr = do
             registers . at free .= Just (Just addr)
             stack . at addr . _Just %= S.insert newLoc
             return newLoc
-        Memory _ _ -> undefined -- undefined
+        Memory _ _ -> error "MEMORY MOVE"
 
 getFreeRegister :: AllocM Reg
 getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
@@ -274,6 +274,7 @@ stmtInfoExtractor valMod locMod regMod = \case
     RoString _ _        -> id
     SectionRoData       -> id
     SectionText         -> id
+    VTable _ _          -> id
 
 registersAndStackInfo :: AllocM String
 registersAndStackInfo = do

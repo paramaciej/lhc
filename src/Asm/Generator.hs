@@ -6,7 +6,6 @@ import Asm.RegAlloc
 import Asm.Utils
 import Quattro.Alive
 import qualified Quattro.Types as Q
-import qualified Utils.Abstract as A
 import Utils.Show
 import Utils.Verbose
 
@@ -21,7 +20,7 @@ genAsm (Q.ClearProgram functions) = do
     (asm, roData) <- runStateT (concat <$> mapM genFunction (M.toAscList functions)) (RoDataSt False M.empty M.empty)
     let ro = [RoString 0 "\"\"" | roData ^. roEmptyString] ++ (M.elems . M.mapWithKey RoString) (roData ^. roStrings)
     let vtables = (M.elems . M.mapWithKey VTable . M.map M.elems) (roData ^. roVTables)
-    let asmMod = if (null vtables) && (null ro) then id else ((SectionRoData : vtables ++ ro ++ [SectionText]) ++)
+    let asmMod = if null vtables && null ro then id else ((SectionRoData : vtables ++ ro ++ [SectionText]) ++)
     return $ asmMod asm
 
 genFunction :: (String, Q.ClearFunction) -> RoDataM [AsmStmt]
@@ -132,7 +131,6 @@ genAndAllocStmt stmtWithAlive = do
                     let freeLoc = RegisterLoc $ valueMatchRegister free val
                     asmStmts %= (++ [Mov value freeLoc])
                     return $ Location freeLoc
-                -- TODO może trzeba deż dla memory?
                 _ -> return value
 
             asmStmts %= (++ [ Mov regValue (Memory objReg (1 + attrNumber))])
@@ -147,7 +145,6 @@ genAndAllocStmt stmtWithAlive = do
             RegisterLoc objReg <- movAddrToRegister obj
             loc <- fastestReadLoc addr
             asmStmts %= (++ [Mov (Location $ Memory objReg (1 + attrNumber)) loc])
-            -- tODO jakieś uakutalninie stanu?
 
     killDead stmtWithAlive
     showStmtGeneratedCode stmtWithAlive

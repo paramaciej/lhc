@@ -29,7 +29,7 @@ genBinOp = \case
             | not (addrStayAlive argAddr aliveAfter) -> genBinOpWithReplacement addr val1 argAddr op
             | otherwise -> genBinOpWithMov addr op val1 val2
         (Q.Literal _, Q.Literal _) -> genBinOpWithMov addr op val1 val2
-        -- TODO Q.Null..
+        (_, _) -> error "NULL PTR"
     nonCommutativeOp op aliveAfter addr dst src = case dst of
         Q.Location addrDst
             | not (addrStayAlive addrDst aliveAfter) -> genBinOpWithReplacement addr src addrDst op
@@ -49,7 +49,7 @@ genBinOpWithReplacement newAddr (Q.Literal literal) destAddr op = do
     asmStmts %= (++ [BinStmt op vArg lDest])
     clearLocationAfterBinStmt destAddr lDest
     replaceAddr destAddr newAddr
-genBinOpWithReplacement _ (Q.Null _) _ _ = undefined -- undefined
+genBinOpWithReplacement _ (Q.Null _) _ _ = error "NULL PTR"
 
 
 clearLocationAfterBinStmt :: Q.Address -> RealLoc -> AllocM ()
@@ -156,7 +156,7 @@ genCall _ funNameEither args = do
         Just addr -> case val of
             Q.Location valAddr -> unless (valAddr == addr) $ moveToStackAndForget addr >> emitMov val reg
             Q.Literal _ -> moveToStackAndForget addr >> emitMov val reg
-            Q.Null _ -> undefined -- undefined
+            Q.Null _ -> error "NULL PTR"
     emitMov val reg = do
         srcVal <- fastestReadVal val
         asmStmts %= (++ [Mov srcVal (RegisterLoc $ valueMatchRegister reg val)])

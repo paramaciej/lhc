@@ -42,7 +42,6 @@ main = getArgs >>= \case
                 programValid (toA program) >>= \case
                     Right newProgram -> do
                         let simplified = simplifyProgram newProgram
-                        verbosePrint $ red "SIMPLY:\n" ++ show simplified -- TODO tymczasowo dodane
                         runExceptT (generateValidatedQuattro simplified) >>= \case
                             Right quattro -> do
                                 liftIO $ hPutStrLn stderr "OK"
