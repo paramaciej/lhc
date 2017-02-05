@@ -36,6 +36,7 @@ fastestReadLoc addr = use (stack . at addr) >>= \case
 fastestReadVal :: Q.Value -> AllocM Value
 fastestReadVal (Q.Literal literal) = return $ IntLiteral literal
 fastestReadVal (Q.Location addr) = Location <$> fastestReadLoc addr
+fastestReadVal (Q.Null _) = return $ IntLiteral 0 -- TODO czym ma być null
 
 valAsLocation :: Q.Value -> AllocM RealLoc
 valAsLocation (Q.Location addr) = fastestReadLoc addr
@@ -44,6 +45,7 @@ valAsLocation val@(Q.Literal literal) = do
     let loc = RegisterLoc $ valueMatchRegister reg val
     asmStmts %= (++ [Mov (IntLiteral literal) loc])
     return loc
+valAsLocation (Q.Null typ) = undefined -- undefined
 
 atLeastOneRegFromValues :: Q.Value -> Q.Value -> AllocM (Value, RealLoc)
 atLeastOneRegFromValues qVal1 qVal2 = do
@@ -59,16 +61,17 @@ atLeastOneRegFromValues qVal1 qVal2 = do
             _ -> do
                 loc2 <- fastestReadLoc addr
                 return (val1, loc2)
+        Q.Null _ -> undefined -- undefined
 
 atLeastOneReg :: Q.Address -> Q.Address -> AllocM (Value, RealLoc)
 atLeastOneReg addr1 addr2 = do
     val1@(Location loc1) <- fastestReadVal (Q.Location addr1)
     (Location loc2)      <- fastestReadVal (Q.Location addr2)
     case (loc1, loc2) of
-        (RegisterLoc _, RegisterLoc _) -> return (val1, loc2)
-        (RegisterLoc _, Stack _ _) -> return (val1, loc2)
+        (RegisterLoc _, _) -> return (val1, loc2)
         (Stack _ _, RegisterLoc _) -> return (val1, loc2)
-        (Stack _ _, Stack _ _) -> do
+        (Memory _ _, RegisterLoc _) -> return (val1, loc2)
+        (_, _) -> do
             newLoc <- movAddrToRegister addr2
             return (val1, newLoc)
 
@@ -92,6 +95,7 @@ movAddrToRegister addr = do
             registers . at free .= Just (Just addr)
             stack . at addr . _Just %= S.insert newLoc
             return newLoc
+        Memory _ _ -> undefined -- undefined
 
 getFreeRegister :: AllocM Reg
 getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
@@ -129,6 +133,7 @@ getFreeStack typ = do
 valueMatchRegister :: Reg -> Q.Value -> Register
 valueMatchRegister reg (Q.Literal _) = Register Q.Int reg
 valueMatchRegister reg (Q.Location addr) = addressMatchRegister reg addr
+valueMatchRegister reg (Q.Null _) = Register Q.Ptr reg
 
 addressMatchRegister :: Reg -> Q.Address -> Register
 addressMatchRegister reg addr = Register (Q.typeToRegType $ addr ^. Q.addressType) reg
@@ -233,6 +238,7 @@ localsUsed stmts = if S.null locals then 0 else S.findMax locals + 1
     fromVal (Location loc)  = fromLoc loc
     fromLoc (RegisterLoc _) = id
     fromLoc (Stack _ i)     = S.insert i
+    fromLoc (Memory _ _)    = id
 
 registersUsed :: [AsmStmt] -> S.Set Reg
 registersUsed = foldr (stmtInfoExtractor fromVal fromLoc fromReg) S.empty
@@ -242,6 +248,7 @@ registersUsed = foldr (stmtInfoExtractor fromVal fromLoc fromReg) S.empty
     fromVal (Location loc)      = fromLoc loc
     fromLoc (RegisterLoc reg)   = fromReg reg
     fromLoc (Stack _ _)         = id
+    fromLoc (Memory reg _)      = fromReg reg
     fromReg (Register _ r)      = S.insert r
 
 stmtInfoExtractor :: (Value -> a -> a) -> (RealLoc -> a -> a) -> (Register -> a -> a) -> AsmStmt -> (a -> a)
@@ -279,6 +286,7 @@ registersAndStackInfo = do
     addrInfo (addr, set) = yellow (printf "%3d" $ addr ^. Q.addressLoc) ++ ": " ++ intercalate ", " (map showRealLoc $ S.elems set)
     showRealLoc (RegisterLoc r) = show r
     showRealLoc (Stack _ i)     = printf "%4s" $ "St" ++ show i
+    showRealLoc (Memory r i)    = show i ++ show r
 
 
 showRegistersAndStack :: AllocM ()

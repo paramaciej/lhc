@@ -31,7 +31,7 @@ data Stmt
     | UniStmt Address UniOp Value
     | Call Address String [Value]
     | StringLit Address (Maybe String)
-    | New Address A.Type
+    | New Address Integer
     | CallVirtual Address Address Integer [Value]
     | SetAttr Address Address Integer Value
     | GetAttr Address Address Integer
@@ -52,7 +52,7 @@ data Address = Address
 
 type Label = Integer
 
-data Value = Location Address | Literal Integer
+data Value = Location Address | Literal Integer | Null A.Type
 
 data QBlock = QBlock
     { _entry :: [Label]
@@ -161,7 +161,7 @@ instance Show Stmt where
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1
     show (Call a str vs)        = show a ++ yellow " <- call " ++ str ++ " (" ++ intercalate ", " (map show vs) ++ ")"
     show (StringLit a str)      = show a ++ yellow " <- " ++ red (fromMaybe "<EMPTY STRING>" str)
-    show (New a typ)            = show a ++ yellow " <- new " ++ A.absShow typ
+    show (New a size)           = show a ++ yellow " <- new of size " ++ show size
     show (CallVirtual a o n vs) = show a ++ yellow " <- call " ++ show o ++ yellow ("." ++ show n) ++ " ("
                                     ++ intercalate ", " (map show vs) ++ ")"
     show (SetAttr a o n v)      = show a ++ yellow " <- " ++ show o ++ yellow ("." ++ show n ++ " %~ ") ++ show v
@@ -177,6 +177,7 @@ instance Show OutStmt where
 instance Show Value where
     show (Location addr)    = show addr
     show (Literal int)      = red $ "$" ++ show int
+    show (Null _)           = red "NULL"
 
 
 makeLenses ''Address
@@ -191,14 +192,16 @@ makeLenses ''FunctionCode
 makeLenses ''Block
 
 valType :: Value -> RegType
-valType (Location (Address _ x)) = typeToRegType x
+valType (Location (Address _ t)) = typeToRegType t
 valType (Literal _) = Int
+valType (Null t) = typeToRegType t
 
 
 typeToRegType :: A.Type -> RegType
 typeToRegType = A.ignorePos $ \case
-    A.Int   -> Int
-    A.Bool  -> Int
-    A.Void  -> Int
-    A.Str   -> Ptr
-    _       -> error "fun type as reg!"
+    A.Int       -> Int
+    A.Bool      -> Int
+    A.Void      -> Int
+    A.Str       -> Ptr
+    A.ClsType _ -> Ptr
+    _           -> error "fun type as reg!"

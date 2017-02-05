@@ -40,3 +40,7 @@ char *_concatString(char *first, char *second) {
     strcat(result, second);
     return result;
 }
+
+void *_new(size_t nmeb, size_t size) {
+    return calloc(nmeb, size);
+}

@@ -116,10 +116,12 @@ setFromOut mp = \case
     Ret val -> case val of
         Literal _ -> S.empty
         Location addr -> S.singleton addr
+        Null _ -> S.empty
     VRet -> S.empty
 
 auxVal :: Value -> (AliveSet -> AliveSet)
 auxVal (Literal _) = id
+auxVal (Null _) = id
 auxVal (Location addr) = S.insert addr
 
 lookupMax :: M.Map k a -> Maybe (k, a)

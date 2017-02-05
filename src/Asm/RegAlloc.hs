@@ -30,7 +30,7 @@ argRegs = [RDI, RSI, RDX, RCX, R8, R9]
 calleeSaveRegs :: [Reg]
 calleeSaveRegs = [RBX, R12, R13, R14, R15]
 
-data RealLoc = RegisterLoc Register | Stack RegType Integer
+data RealLoc = RegisterLoc Register | Stack RegType Integer | Memory Register Integer
   deriving (Eq, Ord)
 
 data Value
@@ -143,24 +143,25 @@ instance Show Register where
             R15 -> "r15d"
 
 instance Show RealLoc where
-    show (RegisterLoc register) = show register
-    show (Stack _ pos)          = show ((-8) * (pos + 1)) ++ "(%rbp)"
+    show (RegisterLoc register)  = show register
+    show (Stack _ pos)           = show ((-8) * (pos + 1)) ++ "(%rbp)"
+    show (Memory register shift) = show (shift * 8) ++ "(" ++ show register ++ ")"
 
 instance Show AsmStmt where
     show (Globl str)    = ".globl " ++ str
     show (Label str)    = str ++ ":"
-    show (Mov v1 v2)    = sufFromVal v1 "mov" ++ show v1 ++ ", " ++ show v2
-    show (Cmp v1 v2)    = sufFromVal v1 "cmp" ++ show v1 ++ ", " ++ show v2
+    show (Mov v1 v2)    = sufFromTwoVal v1 (Location v2) "mov" ++ show v1 ++ ", " ++ show v2
+    show (Cmp v1 v2)    = sufFromTwoVal v1 (Location v2) "cmp" ++ show v1 ++ ", " ++ show v2
     show (Jmp label)    = align "jmp" ++ label
     show (Jz  label)    = align "jz" ++ label
     show (Push val)     = align "pushq" ++ show val
     show (Pop loc)      = align "popq" ++ show loc
     show (Call fun)     = align "call" ++ fun
     show LeaveRet       = align "leave" ++ "\n" ++ align "ret"
-    show (IMul v1 v2)   = sufFromVal v1 "imul" ++ show v1 ++ ", " ++ show v2
+    show (IMul v1 v2)   = sufFromTwoVal v1 (Location $ RegisterLoc v2) "imul" ++ show v1 ++ ", " ++ show v2
     show (IDiv v1)      = sufFromVal (Location v1) "idiv" ++ show v1
     show CDQ            = align "cdq"
-    show (Xor v1 v2)    = sufFromVal v1 "xor" ++ show v1 ++ ", " ++ show v2
+    show (Xor v1 v2)    = sufFromTwoVal v1 (Location v2) "xor" ++ show v1 ++ ", " ++ show v2
     show (Not v1)       = sufFromVal (Location v1) "not" ++ show v1
     show SectionRoData  = ".section .rodata"
     show SectionText    = ".section .text"
@@ -168,12 +169,12 @@ instance Show AsmStmt where
     show (Custom s)   = s
     show (BinStmt op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
-        opShow = sufFromVal v1 $ case op of
+        opShow = sufFromTwoVal v1 (Location v2) $ case op of
             Add -> "add"
             Sub -> "sub"
     show (CondMov op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
-        opShow = sufFromVal (Location v1) $ case op of
+        opShow = sufFromTwoVal (Location v1) (Location v2) $ case op of
             LTH -> "cmovl"
             LEQ -> "cmovle"
             GTH -> "cmovg"
@@ -184,14 +185,36 @@ instance Show AsmStmt where
 valType :: Value -> RegType
 valType (Location (RegisterLoc (Register x _))) = x
 valType (Location (Stack x _ )) = x
+valType (Location (Memory (Register x _) _)) = x
 valType (IntLiteral _) = Int
 valType (StrLiteral _) = Ptr
+
+twoValType :: Value -> Value -> RegType
+twoValType v1 v2
+    | valType v1 == valType v2 = valType v1
+    | otherwise = case (v1, v2) of
+        (Location (RegisterLoc (Register x _)), Location (Memory _ _)) -> x
+        (Location (RegisterLoc (Register x _)), IntLiteral _) -> x
+        (Location (Stack x _), Location (Memory _ _)) -> x
+        (Location (Stack x _), IntLiteral _) -> x
+        (Location (Memory _ _), Location (RegisterLoc (Register x _))) -> x
+        (Location (Memory _ _), Location (Stack x _)) -> x
+        (Location (Memory (Register x _) _), IntLiteral _) -> x
+        (IntLiteral _, Location (RegisterLoc (Register x _ ))) -> x
+        (IntLiteral _, Location (Stack x _ )) -> x
+        (IntLiteral _, Location (Memory (Register x _) _)) -> x
+        _ -> error "panic: wrong operands types!"
 
 align :: String -> String
 align = printf "  %-6s "
 
 sufFromVal :: Value -> String -> String
 sufFromVal v op = align $ case valType v of
+    Int -> op ++ "l"
+    Ptr -> op ++ "q"
+
+sufFromTwoVal :: Value -> Value -> String -> String
+sufFromTwoVal v1 v2 op = align $ case twoValType v1 v2 of
     Int -> op ++ "l"
     Ptr -> op ++ "q"
 

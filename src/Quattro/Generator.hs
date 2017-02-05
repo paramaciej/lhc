@@ -75,12 +75,12 @@ genStmt block = A.ignorePos $ \case
             setLocal ident val
     A.Ass lval expr -> genExpr expr >>= setLocalLValue lval
     A.Incr lval -> do
-        loc <- getLocalLValue lval
+        loc <- genLValueExpr lval
         temp <- freshLocForLValue lval
         emitExpr $ BinStmt temp Add (Location loc) (Literal 1)
         setLocalLValue lval $ Location temp
     A.Decr lval -> do
-        loc <- getLocalLValue lval
+        loc <- genLValueExpr lval
         temp <- freshLocForLValue lval
         emitExpr $ BinStmt temp Sub (Location loc) (Literal 1)
         setLocalLValue lval $ Location temp
@@ -144,10 +144,12 @@ genExpr = A.ignorePos $ \case
                         Nothing -> error $ "METHOD " ++ A.absShow method ++ " NOT FOUND"
     A.ELitInt int -> return $ Literal int
     A.ELitBool bool -> return $ Literal $ if bool then 1 else 0
-    A.ENull t -> undefined -- TODO
+    A.ENull typ -> return $ Null typ
     A.ENew typ -> do
         ret <- freshLoc typ
-        emitExpr $ New ret typ
+        info <- getClassInfoFromType typ
+        let size = toInteger $ 8 * (1 + info ^. qAttrs . to length)
+        emitExpr $ New ret size
         return $ Location ret
     A.EString string -> do
         ret <- freshLoc $ A.makeAbs A.Str
@@ -184,9 +186,9 @@ genExpr = A.ignorePos $ \case
         locals . at tempIdent .= Nothing
         return val
 
-genLValueExpr :: A.LValue -> GenM Address
-genLValueExpr = A.ignorePos $ \case
-    A.LVar ident -> getLocal ident
+genLValueAddrMod :: (A.Ident -> GenM Address) -> A.LValue -> GenM Address
+genLValueAddrMod mod = A.ignorePos $ \case
+    A.LVar ident -> mod ident
     A.LMember lval member -> do
         addr <- genLValueExpr lval
         info <- getClassInfo addr
@@ -196,6 +198,9 @@ genLValueExpr = A.ignorePos $ \case
                 emitExpr $ GetAttr ret addr number
                 return ret
             Nothing -> error $ "ATTRIBUTE " ++ A.absShow member ++ " NOT FOUND"
+
+genLValueExpr :: A.LValue -> GenM Address
+genLValueExpr = genLValueAddrMod getLocal
 
 
 genMov :: Address -> Value -> GenM ()
@@ -261,11 +266,12 @@ freshLocForIdent :: A.Ident -> GenM Address
 freshLocForIdent ident = use (locals . at ident . singular _Just . locType) >>= freshLoc
 
 freshLocForLValue :: A.LValue -> GenM Address
-freshLocForLValue = undefined -- TODO
+freshLocForLValue = genLValueAddrMod freshLocForIdent
 
 freshLocForValue :: Value -> GenM Address
 freshLocForValue (Literal _) = freshLoc $ A.makeAbs A.Int
 freshLocForValue (Location (Address _ t)) = freshLoc t
+freshLocForValue (Null t) = freshLoc t
 
 freshBlock :: GenM Label
 freshBlock = do
@@ -303,21 +309,21 @@ setLocal ident val = do
     bl <- use currentBlock
     case val of
         Location addr -> locals . at ident . _Just . address . at bl .= Just addr
-        Literal _ -> do
+        _ -> do
             -- we don't use getLocal, because previous value of variable doesn't interest us here
             newAddr <- freshLocForValue val
             locals . at ident . _Just . address . at bl .= Just newAddr
             genMov newAddr val
 
 getClassInfo :: Address -> GenM ClsInfo
-getClassInfo addr = case addr ^. addressType . A.aa of
+getClassInfo addr = getClassInfoFromType $ addr ^. addressType
+
+getClassInfoFromType :: A.Type -> GenM ClsInfo
+getClassInfoFromType = A.ignorePos $ \case
     A.ClsType ident -> use (classInfo . at ident) >>= \case
         Just info -> return info
         Nothing -> error $ "INFORMATION ABOUT CLASS " ++ A.absShow ident ++ " NOT FOUND"
     other -> error $ "CLASS OBJECT IS NOT OF CLASS TYPE (IS: " ++ show other ++ ")"
-
-getLocalLValue :: A.LValue -> GenM Address -- TODO taka sygnatura?
-getLocalLValue = undefined -- TODO
 
 getLocal :: A.Ident -> GenM Address
 getLocal ident = do
@@ -396,6 +402,7 @@ defaultValForType = A.ignorePos $ \case
     A.Int -> A.makeAbs (A.ELitInt 0)
     A.Bool -> A.makeAbs (A.ELitBool False)
     A.Str -> A.makeAbs (A.EString Nothing)
+    A.ClsType cls -> A.makeAbs $ A.ENull (A.makeAbs $ A.ClsType cls)
     _ -> error "void/fun type hasn't got any default value!"
 
 qStmtGetter :: Functor f => A.Ident -> Label -> (QBlock -> f QBlock) -> QuattroSt -> f QuattroSt

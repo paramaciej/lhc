@@ -74,7 +74,7 @@ simplifyFnDef td = let simplified = over (aa . fnDefBlock) simplifyBlock td
 simplifyClsStmt :: ClassStmt -> ClassStmt
 simplifyClsStmt clsStmt = case clsStmt ^. aa of
     Attr _ _ -> clsStmt
-    Method _ _ _ _ -> if methodIsVoid && isLeft (methodHasReturn simplified)
+    Method{} -> if methodIsVoid && isLeft (methodHasReturn simplified)
         then simplified & aa . singular methodBlock . aa . blockStmts %~ (++ [makeAbs VRet])
         else simplified
       where
@@ -82,7 +82,9 @@ simplifyClsStmt clsStmt = case clsStmt ^. aa of
         methodIsVoid = simplified ^. aa . singular methodRetType == makeAbs Void
 
 simplifyProgram :: Program -> Program
-simplifyProgram = forgetPos . over (aa . programFunctions . traverse) simplifyFnDef
+simplifyProgram = forgetPos
+    . over (aa . programFunctions . traverse) simplifyFnDef
+    . over (aa . programClasses . traverse . aa . clsDefBody . aa . classBodyStmts . traverse) simplifyClsStmt
 
 
 fnHasReturn :: FnDef -> Either String ()

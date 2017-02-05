@@ -84,14 +84,14 @@ genAndAllocStmt stmtWithAlive = do
         Q.BinStmt addr op val1 val2 -> case op of
             Q.Add -> case Q.valType val1 of
                 Q.Int -> genBinOp Add (stmtWithAlive ^. after) addr val1 val2
-                Q.Ptr -> call addr "_concatString" [val1, val2]
+                Q.Ptr -> call addr (Right "_concatString") [val1, val2]
             Q.Sub -> genBinOp Sub (stmtWithAlive ^. after) addr val1 val2
             Q.Mul -> genIMul addr val1 val2
             Q.Div -> genIDiv addr val1 val2
             Q.Mod -> genIMod addr val1 val2
         Q.CmpStmt addr op val1 val2 -> genCmp op addr val2 val1
         Q.UniStmt addr op value -> genUni op addr value
-        Q.Call addr funName args -> call addr funName args
+        Q.Call addr funName args -> call addr (Right funName) args
         Q.StringLit addr string -> do
             loc <- fastestReadLoc addr
             nr <- case string of
@@ -104,7 +104,40 @@ genAndAllocStmt stmtWithAlive = do
                     lift $ roStrings %= M.insert strNumber str
                     return strNumber
             asmStmts %= (++ [Mov (StrLiteral nr) loc])
-        Q.New _ _ -> undefined -- TODO
+        Q.New addr size -> call addr (Right "_new") [Q.Literal 1, Q.Literal size] -- TODO wyzerować string
+        Q.CallVirtual addr obj virtualNumber args -> do
+            RegisterLoc objReg <- movAddrToRegister obj
+            free <- getFreeRegister
+            let freeRegister = addressMatchRegister free obj
+            asmStmts %= (++ [Mov (Location $ Memory objReg 0) (RegisterLoc freeRegister)
+                , Mov (Location $ Memory freeRegister virtualNumber) (RegisterLoc freeRegister)])
+            call addr (Left (RegisterLoc freeRegister)) args
+        Q.SetAttr addr obj attrNumber val -> do
+            RegisterLoc objReg <- movAddrToRegister obj
+            value <- fastestReadVal val
+            regValue <- case value of
+                Location (Stack _ _) -> do
+                    free <- getFreeRegister
+                    let freeLoc = RegisterLoc $ valueMatchRegister free val
+                    asmStmts %= (++ [Mov value freeLoc])
+                    return $ Location freeLoc
+                -- TODO może trzeba deż dla memory?
+                _ -> return value
+
+            asmStmts %= (++ [ Mov regValue (Memory objReg (1 + attrNumber))])
+
+            let val = Q.Location obj
+            when (addrStayAlive addr $ stmtWithAlive ^. after) $
+                M.lookup addr <$> use stack >>= \case
+                    Just realLocs -> movValToAddrLocatedIn val addr realLocs
+                    Nothing -> movValToAddrLocatedIn val addr S.empty
+
+        Q.GetAttr addr obj attrNumber -> do
+            RegisterLoc objReg <- movAddrToRegister obj
+            loc <- fastestReadLoc addr
+            asmStmts %= (++ [Mov (Location $ Memory objReg (1 + attrNumber)) loc])
+            -- tODO jakieś uakutalninie stanu?
+
     killDead stmtWithAlive
     showStmtGeneratedCode stmtWithAlive
     unlines . map show . drop prevStmts <$> use asmStmts >>= \case
