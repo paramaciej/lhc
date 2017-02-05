@@ -141,7 +141,7 @@ genCall _ funNameEither args = do
         asmStmts %= (++ [Push val])
     let funName = case funNameEither of
             Right str -> str
-            Left loc -> show loc
+            Left loc -> "*" ++ show loc
     asmStmts %= (++ [Call funName])
 
     let rspAdd = (length args - 6 + 1) `div` 2 * 16

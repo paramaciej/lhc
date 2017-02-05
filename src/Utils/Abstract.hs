@@ -49,7 +49,9 @@ newtype AIdent = Ident
 makeLenses ''AIdent
 
 instance Show AIdent where
-    show = _identString
+    show i = case _identString i of
+        "self" -> yellow "self"
+        ident -> ident
 
 type Program = AbsPos AProgram
 data AProgram = Program
@@ -292,3 +294,7 @@ makeLenses ''AClassStmt
 makeLenses ''AArg
 makeLenses ''ABlock
 makeLenses ''AStmt
+
+
+selfArg :: ClsDef -> Arg
+selfArg clsDef = makeAbs $ Arg (makeAbs $ ClsType $ clsDef ^. aa . clsDefIdent) (makeAbs $ Ident "self")

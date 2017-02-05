@@ -6,6 +6,7 @@ import Asm.RegAlloc
 import Asm.Utils
 import Quattro.Alive
 import qualified Quattro.Types as Q
+import qualified Utils.Abstract as A
 import Utils.Show
 import Utils.Verbose
 
@@ -17,10 +18,11 @@ import qualified Data.Set as S
 
 genAsm :: Q.ClearProgram -> CompilerOptsM [AsmStmt]
 genAsm (Q.ClearProgram functions) = do
-    (asm, roData) <- runStateT (concat <$> mapM genFunction (M.toAscList functions)) (RoDataSt False M.empty)
+    (asm, roData) <- runStateT (concat <$> mapM genFunction (M.toAscList functions)) (RoDataSt False M.empty M.empty)
     let ro = [RoString 0 "\"\"" | roData ^. roEmptyString] ++ (M.elems . M.mapWithKey RoString) (roData ^. roStrings)
-    let roMod = if null ro then id else ((SectionRoData : ro ++ [SectionText]) ++)
-    return $ roMod asm
+    let vtables = (M.elems . M.mapWithKey VTable . M.map M.elems) (roData ^. roVTables)
+    let asmMod = if (null vtables) && (null ro) then id else ((SectionRoData : vtables ++ ro ++ [SectionText]) ++)
+    return $ asmMod asm
 
 genFunction :: (String, Q.ClearFunction) -> RoDataM [AsmStmt]
 genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do
@@ -30,7 +32,7 @@ genFunction (funName, fun@(Q.ClearFunction entry blocks)) = do
         then locals + locals `mod` 2
         else (locals + 1) - locals `mod` 2
     let rspShift = (localsUsed allStmts + 1) `div` 2 * 16
-    verbosePrint $ "Function " ++ green funName ++ " has used callee-save registers: "
+    unless (null usedCalleeSaveRegs) $ verbosePrint $ "Function " ++ green funName ++ " has used callee-save registers: "
         ++ intercalate ", " (map show usedCalleeSaveRegs)
     return $ concatMap (prologueEpilogue localsSlots usedCalleeSaveRegs) allStmts
   where
@@ -71,6 +73,9 @@ genAndAllocStmt :: StmtWithAlive -> AllocM ()
 genAndAllocStmt stmtWithAlive = do
     prevStmts <- length <$> use asmStmts
     case stmtWithAlive ^. stmt of
+        Q.IsMethod method mp -> forM_ (M.toAscList mp) $ \(cls, int) -> lift $ roVTables . at cls %= \case
+            Nothing -> Just $ M.singleton int method
+            Just vt -> Just $ M.insert int method vt
         Q.Mov addr val -> when (addrStayAlive addr $ stmtWithAlive ^. after) $ -- we do nothing when addr isn't alive after current statement
             M.lookup addr <$> use stack >>= \case
                 Just realLocs -> movValToAddrLocatedIn val addr realLocs
@@ -103,15 +108,21 @@ genAndAllocStmt stmtWithAlive = do
                     strNumber <- (+1) . toInteger . length <$> lift (use roStrings)
                     lift $ roStrings %= M.insert strNumber str
                     return strNumber
-            asmStmts %= (++ [Mov (StrLiteral nr) loc])
-        Q.New addr size -> call addr (Right "_new") [Q.Literal 1, Q.Literal size] -- TODO wyzerować string
+            asmStmts %= (++ [Mov (RoDataLiteral $ "_STRING_" ++ show nr) loc])
+        Q.New addr clsName size isClass -> when (addrStayAlive addr $ stmtWithAlive ^. after) $ do
+            call addr (Right "_new") [Q.Literal 1, Q.Literal size]
+            when isClass $ do
+                RegisterLoc objReg <- movAddrToRegister addr
+                asmStmts %= (++ [Mov (RoDataLiteral $ "_vtable_" ++ clsName ++ "_" ++ show (length clsName)) (Memory objReg 0)])
         Q.CallVirtual addr obj virtualNumber args -> do
             RegisterLoc objReg <- movAddrToRegister obj
             free <- getFreeRegister
             let freeRegister = addressMatchRegister free obj
             asmStmts %= (++ [Mov (Location $ Memory objReg 0) (RegisterLoc freeRegister)
-                , Mov (Location $ Memory freeRegister virtualNumber) (RegisterLoc freeRegister)])
-            call addr (Left (RegisterLoc freeRegister)) args
+                , Mov (Location $ Memory freeRegister virtualNumber) (RegisterLoc freeRegister)
+                ])
+
+            call addr (Left (RegisterLoc freeRegister)) (Q.Location obj : args)
         Q.SetAttr addr obj attrNumber val -> do
             RegisterLoc objReg <- movAddrToRegister obj
             value <- fastestReadVal val

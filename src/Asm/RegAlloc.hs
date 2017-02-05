@@ -21,7 +21,7 @@ data Register = Register
     } deriving (Eq, Ord)
 
 
-data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
+data Reg = R11 | R10 | RAX | R9 | R8 | RCX | RDX | RSI | RDI | RBX | R12 | R13 | R14 | R15
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 argRegs :: [Reg]
@@ -36,7 +36,7 @@ data RealLoc = RegisterLoc Register | Stack RegType Integer | Memory Register In
 data Value
     = Location RealLoc
     | IntLiteral Integer
-    | StrLiteral Integer
+    | RoDataLiteral String
   deriving Eq
 
 newtype ALabel = ALabel Q.Label
@@ -75,6 +75,7 @@ data AsmStmt
     | Globl String
     | Custom String
     | RoString Integer String
+    | VTable String [String]
     | SectionRoData
     | SectionText
   deriving Eq
@@ -88,6 +89,7 @@ data AllocSt = AllocSt
 data RoDataSt = RoDataSt
     { _roEmptyString :: Bool
     , _roStrings :: M.Map Integer String
+    , _roVTables :: M.Map String (M.Map Integer String)
     }
 
 data StmtWithAlive = StmtWithAlive
@@ -106,7 +108,7 @@ instance Show ALabel where
 
 instance Show Value where
     show (IntLiteral int)   = "$" ++ show int
-    show (StrLiteral nr)    = "$_STRING_" ++ show nr
+    show (RoDataLiteral l)  = "$" ++ l
     show (Location realLoc) = show realLoc
 
 instance Show Register where
@@ -166,6 +168,7 @@ instance Show AsmStmt where
     show SectionRoData  = ".section .rodata"
     show SectionText    = ".section .text"
     show (RoString i s) = "_STRING_" ++ show i ++ ":\n  .string " ++ s
+    show (VTable n vs)  = n ++ ":\n" ++ unlines (map ("  .quad " ++) vs)
     show (Custom s)   = s
     show (BinStmt op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
@@ -187,7 +190,7 @@ valType (Location (RegisterLoc (Register x _))) = x
 valType (Location (Stack x _ )) = x
 valType (Location (Memory (Register x _) _)) = x
 valType (IntLiteral _) = Int
-valType (StrLiteral _) = Ptr
+valType (RoDataLiteral _) = Ptr
 
 twoValType :: Value -> Value -> RegType
 twoValType v1 v2

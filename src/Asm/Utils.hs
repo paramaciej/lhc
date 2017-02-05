@@ -110,13 +110,13 @@ getFreeRegister = (M.keys . M.filter isNothing) <$> use registers >>= \case
                 registers . at reg .= Just Nothing
                 return reg
             [] -> do
-                oldAddr <- fromJust . fromJust <$> use (registers . at RDX)
+                oldAddr <- fromJust . fromJust <$> use (registers . at R11)
                 stackLoc <- getFreeStackForType (oldAddr ^. Q.addressType)
-                source@(Location regLoc) <- fromJust <$> valueFromReg RDX
+                source@(Location regLoc) <- fromJust <$> valueFromReg R11
                 asmStmts %= (++ [Mov source stackLoc])
                 stack . at oldAddr . _Just %= S.delete regLoc . S.insert stackLoc
-                registers . at RDX .= Just Nothing
-                return RDX
+                registers . at R11 .= Just Nothing
+                return R11
 
 getFreeStackForType :: A.Type -> AllocM RealLoc
 getFreeStackForType = getFreeStack . Q.typeToRegType
@@ -234,7 +234,7 @@ localsUsed stmts = if S.null locals then 0 else S.findMax locals + 1
   where
     locals = foldr (stmtInfoExtractor fromVal fromLoc (const id)) S.empty stmts
     fromVal (IntLiteral _)  = id
-    fromVal (StrLiteral _)  = id
+    fromVal (RoDataLiteral _)  = id
     fromVal (Location loc)  = fromLoc loc
     fromLoc (RegisterLoc _) = id
     fromLoc (Stack _ i)     = S.insert i
@@ -244,7 +244,7 @@ registersUsed :: [AsmStmt] -> S.Set Reg
 registersUsed = foldr (stmtInfoExtractor fromVal fromLoc fromReg) S.empty
   where
     fromVal (IntLiteral _)      = id
-    fromVal (StrLiteral _)      = id
+    fromVal (RoDataLiteral _)      = id
     fromVal (Location loc)      = fromLoc loc
     fromLoc (RegisterLoc reg)   = fromReg reg
     fromLoc (Stack _ _)         = id

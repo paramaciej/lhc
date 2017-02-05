@@ -24,14 +24,15 @@ data UniOp = Neg | Not
 type RelOp = A.ARelOp
 
 data Stmt
-    = FunArg Address Integer
+    = IsMethod String (M.Map String Integer)
+    | FunArg Address Integer
     | Mov Address Value
     | BinStmt Address BinOp Value Value
     | CmpStmt Address RelOp Value Value
     | UniStmt Address UniOp Value
     | Call Address String [Value]
     | StringLit Address (Maybe String)
-    | New Address Integer
+    | New Address String Integer Bool
     | CallVirtual Address Address Integer [Value]
     | SetAttr Address Address Integer Value
     | GetAttr Address Address Integer
@@ -86,7 +87,7 @@ data QuattroSt = QuattroSt
 
 data ClsInfo = ClsInfo
     { _qAttrs :: M.Map A.Ident (A.Type, Integer)
-    , _qMethods :: M.Map A.Ident (A.Type, Integer)
+    , _qMethods :: M.Map A.Ident (A.Type, Integer, A.Ident)
     , _qSuperClass :: Maybe A.Ident
     } deriving Show
 
@@ -154,6 +155,7 @@ showAbsFunCode entry blocks = "( starts in LABEL " ++ show entry ++ " )\n\n" ++ 
 
 
 instance Show Stmt where
+    show (IsMethod method mp)   = yellow method ++ green " is method at " ++ intercalate ", " (map (\(s, i) -> yellow s ++ "." ++ show i)$ M.toAscList mp)
     show (Mov a v)              = show a ++ yellow " <- " ++ show v
     show (FunArg a nr)          = show a ++ yellow " <- arg " ++ show nr
     show (BinStmt a op v1 v2)   = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1 ++ " " ++ show v2
@@ -161,7 +163,7 @@ instance Show Stmt where
     show (UniStmt a op v1)      = show a ++ yellow (" <- " ++ show op) ++ " " ++ show v1
     show (Call a str vs)        = show a ++ yellow " <- call " ++ str ++ " (" ++ intercalate ", " (map show vs) ++ ")"
     show (StringLit a str)      = show a ++ yellow " <- " ++ red (fromMaybe "<EMPTY STRING>" str)
-    show (New a size)           = show a ++ yellow " <- new of size " ++ show size
+    show (New a name size _)  = show a ++ yellow " <- new " ++ red name ++ " (of size " ++ show size ++ ")"
     show (CallVirtual a o n vs) = show a ++ yellow " <- call " ++ show o ++ yellow ("." ++ show n) ++ " ("
                                     ++ intercalate ", " (map show vs) ++ ")"
     show (SetAttr a o n v)      = show a ++ yellow " <- " ++ show o ++ yellow ("." ++ show n ++ " %~ ") ++ show v

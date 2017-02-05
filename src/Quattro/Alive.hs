@@ -87,6 +87,7 @@ calculateInSets (ClearFunction _ blockMap) = findFixPoint
 
 stmtMod :: Stmt -> (AliveSet -> AliveSet)
 stmtMod = \case
+    IsMethod _ _                -> id
     Mov dest val                -> auxMov dest val
     FunArg dest _               -> S.delete dest
     BinStmt dest _ val1 val2    -> auxBinOp dest val1 val2
@@ -94,7 +95,7 @@ stmtMod = \case
     UniStmt dest _ val          -> auxMov dest val
     Call dest _ vs              -> auxValues vs . S.delete dest
     StringLit dest _            -> S.delete dest
-    New dest _                  -> S.delete dest
+    New dest _ _ _              -> S.delete dest
     CallVirtual dest obj _ vs   -> auxValues vs . S.insert obj . S.delete dest
     SetAttr dest obj _ val      -> auxVal val . S.insert obj . S.delete dest
     GetAttr dest obj _          -> S.insert obj . S.delete dest

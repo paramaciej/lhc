@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Quattro.Validator where
 
 import Control.Lens
@@ -35,35 +36,39 @@ generateValidatedQuattro program = do
     classInfo = M.fromList $ map xxx (program ^. A.aa . A.programClasses ^.. traverse . A.aa)
     xxx clsDef = ( clsDef ^. A.clsDefIdent
                  , ClsInfo
-                    (createEnumeratedMap $ getClsAttrs clsDef)
-                    (createEnumeratedMap $ getClsMethods clsDef)
+                    (createEnumeratedAttrMap   $ getClsAttrs   clsDef)
+                    (createEnumeratedMethodMap $ getClsMethods clsDef)
                     (clsDef ^. A.clsDefExtend)
                  )
       where
-        createEnumeratedMap :: [(A.Ident, A.Type)] -> M.Map A.Ident (A.Type, Integer)
-        createEnumeratedMap = M.fromList . map (\(nr, (i, t)) -> (i, (t, nr))) . zip [0..]
+        createEnumeratedAttrMap = M.fromList . map (\(nr, (i, t)) -> (i, (t, nr))) . zip [0..]
+        createEnumeratedMethodMap = M.fromList . map (\(nr, (c, m, t)) -> (m, (t, nr, c))) . zip [0..]
 
         getClsAttrs :: A.AClsDef -> [(A.Ident, A.Type)]
         getClsAttrs clsDef = case clsDef ^. A.clsDefExtend of
             Just super -> superAttrs super ++ thisAttrs clsDef
             Nothing -> thisAttrs clsDef
 
-        getClsMethods :: A.AClsDef ->  [(A.Ident, A.Type)]
+        getClsMethods :: A.AClsDef ->  [(A.Ident, A.Ident, A.Type)]
         getClsMethods clsDef = case clsDef ^. A.clsDefExtend of
-            Just super -> superMethods super ++ filter (\(i, _) -> not (i `S.member` superMethodsSet super)) (thisMethods clsDef)
+            Just super -> foldl aux (superMethods super) (thisMethods clsDef)
+              where
+                aux acc c@(_, cM, _) = case findIndex (\(_,i,_) -> i == cM) acc of
+                    Just idx -> acc & element idx .~ c
+                    Nothing -> acc ++ [c]
             Nothing -> thisMethods clsDef
 
         thisAttrs clsDef = foldr attrAux [] (clsDef ^. A.clsDefBody . A.aa . A.classBodyStmts ^.. traverse . A.aa)
         attrAux stmt acc = case stmt of
             A.Method{} -> acc
             A.Attr t items -> acc ++ map (\(A.AttrItem i) -> (i, t)) (items ^.. traverse . A.aa)
-        thisMethods clsDef = foldr methodAux [] (clsDef ^. A.clsDefBody . A.aa . A.classBodyStmts ^.. traverse . A.aa)
-        methodAux stmt acc = case stmt of
+        thisMethods clsDef = foldl (methodAux clsDef) [] (clsDef ^. A.clsDefBody . A.aa . A.classBodyStmts ^.. traverse . A.aa)
+        methodAux clsDef acc = \case
             A.Attr{} -> acc
-            A.Method t ident args _ -> acc ++ [(ident, makeFunType t args)]
+            A.Method t ident args _ -> acc ++ [(clsDef ^. A.clsDefIdent, ident, makeFunType t args)]
         superAttrs = getClsAttrs . getClsDef
         superMethods = getClsMethods . getClsDef
-        superMethodsSet = S.fromList . map fst . superMethods
+        superMethodsSet = S.fromList . map (\(x, _, _) -> x) . superMethods
         getClsDef ident = fromJust $ find (\c -> c ^. A.clsDefIdent == ident) (program ^. A.aa . A.programClasses ^.. traverse . A.aa)
 
 

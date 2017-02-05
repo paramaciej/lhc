@@ -99,7 +99,9 @@ insertClassInfos = do
             Nothing -> return (amp, M.insert name (name, makeFunType retType args) mmp)
     attrAux t (amp, mmp) attrItem = let AttrItem i = attrItem ^. aa in case i `M.lookup` amp of
         Just (prev, _) -> reDefinition prev i "Attribute"
-        Nothing -> return (M.insert i (i, t) amp, mmp)
+        Nothing -> do
+            when (i ^. aa . identString == "self") $ contextError i "Attribute cannot shadow `self`!" >>= throwError
+            return (M.insert i (i, t) amp, mmp)
     reDefinition prev new display = do
         let posInfo = maybe "" (\s -> " (at " ++ show s ++ ")") (prev ^. pos)
         contextError new (display ++ " `" ++ absShow new ++ "` is already declared" ++ posInfo ++ "!") >>= throwError
@@ -168,7 +170,7 @@ checkClassStmt cls stmt = case stmt ^. aa of
                 Nothing -> return ()
             Nothing -> return ()
         putClassAttrsIntoState cls
-        putArgsIntoState block args
+        putArgsIntoState block (selfArg cls : args)
         newBlock <- checkBlock t block
         modify $ over symbols $ M.mapMaybe $ \symbolInfo -> if symbolInfo ^. defInBlock == InMethod
             then symbolInfo ^. prevDef
@@ -271,7 +273,7 @@ selfizeLValue lvalue = lValueDefInMethod lvalue >>= (\x -> if x
     then return $ prefixLValueWithSelf lvalue
     else return lvalue)
   where
-    self = makeAbs $ Ident "_self"
+    self = makeAbs $ Ident "self"
 
     lValueDefInMethod :: LValue -> CheckSt Bool
     lValueDefInMethod = ignorePos $ \case
@@ -429,11 +431,15 @@ putItemIntoState t ident context defPlace = case t ^. aa of
         let mod = modify $ over symbols $ M.insert ident (SymbolInfo t ident defPlace mSymbolInfo)
         case mSymbolInfo of
             Nothing -> mod
-            Just symbolInfo -> if symbolInfo ^. defInBlock /= defPlace
-                then mod
-                else let prevPos = (show . fromJust . view (defIdent . pos)) symbolInfo in contextError context
-                    ("Identifier `" ++ absShow ident ++ "` is already declared (at " ++ prevPos ++ ")!")
-                        >>= throwError
+            Just symbolInfo -> aux (symbolInfo ^. defInBlock)
+              where
+                prevPos = (maybe "" (\s -> " (at " ++ show s ++ ")") . view (defIdent . pos)) symbolInfo
+                aux def
+                    | def == defPlace = contextError context ("Identifier `" ++ absShow ident
+                            ++ "` is already declared" ++ prevPos ++ "!") >>= throwError
+                    | def == InMethod = contextError context ("Method arguments cannot shadow attributes: identifier `"
+                        ++ absShow ident ++ "` is already declared as a class attribute!") >>= throwError
+                    | otherwise = mod
 
 putArgsIntoState :: Block -> [Arg] -> CheckSt ()
 putArgsIntoState block = mapM_ aux

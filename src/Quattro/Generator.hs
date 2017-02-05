@@ -9,6 +9,7 @@ import Utils.Verbose
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
+import Data.Foldable
 import qualified Data.Map as M
 
 genProgram :: A.Program -> GenM ()
@@ -35,14 +36,26 @@ genClsDef clsDef = do
     isMethod A.Attr{} = False
     isMethod A.Method{} = True
     genMethod method = do
-        let fName = "_class_" ++ (clsDef ^. A.aa . A.clsDefIdent . A.aa . A.identString)
-                    ++ "_" ++ (method ^. A.methodName . A.aa . A.identString)
+        let fName = let cName = (clsDef ^. A.aa . A.clsDefIdent . A.aa . A.identString);
+                            mName = (method ^. A.methodName . A.aa . A.identString)
+                    in "_class_" ++ cName ++ "_" ++ show (length cName) ++ "_" ++ mName ++ "_" ++ show (length mName)
         let block = method ^. singular A.methodBlock
         let args = method ^. singular A.methodArgs ^.. traverse . A.aa
         codeForFun (A.makeAbs $ A.Ident fName)
-        mapM_ (uncurry $ genFunArg block) (zip [0..] $ selfArg : args)
+
+        vTables<- M.mapMaybe (getMethodNumberFromClsInfo (method ^. singular A.methodName)) <$> use classInfo
+        emitExpr $ IsMethod fName $ M.mapKeys getVTableName vTables
+        mapM_ (uncurry $ genFunArg block) (zip [0..] $ ((A.selfArg clsDef) ^. A.aa) : args)
         genBlock (method ^. singular A.methodBlock)
-    selfArg = A.Arg (A.makeAbs $ A.ClsType $ clsDef ^. A.aa . A.clsDefIdent) (A.makeAbs $ A.Ident "_self")
+
+
+    getMethodNumberFromClsInfo :: A.Ident -> ClsInfo -> Maybe Integer
+    getMethodNumberFromClsInfo mIdent clsInfo = aux (mIdent `M.lookup` (clsInfo ^. qMethods))
+      where
+        aux (Just (_, nr, cls)) = if cls == clsDef ^. A.aa . A.clsDefIdent then Just nr else Nothing
+        aux Nothing = Nothing
+    getVTableName ident = let cName = (ident ^. A.aa . A.identString) in "_vtable_" ++ cName ++ "_" ++ show (length cName)
+
 
 
 codeForFun :: A.Ident -> GenM ()
@@ -136,7 +149,7 @@ genExpr = A.ignorePos $ \case
                     objAddr <- genLValueExpr obj
                     info <- getClassInfo objAddr
                     case info ^. qMethods . at method of
-                        Just (typ, number) -> do
+                        Just (typ, number, _) -> do
                             let A.Fun retType _ = typ ^. A.aa
                             ret <- freshLoc retType
                             emitExpr $ CallVirtual ret objAddr number values
@@ -149,8 +162,19 @@ genExpr = A.ignorePos $ \case
         ret <- freshLoc typ
         info <- getClassInfoFromType typ
         let size = toInteger $ 8 * (1 + info ^. qAttrs . to length)
-        emitExpr $ New ret size
-        return $ Location ret
+        let A.ClsType ident = typ ^. A.aa
+        emitExpr $ New ret (ident ^. A.aa . A.identString) size (info ^. qMethods . to length > 0)
+        Location <$> foldlM aux ret (M.elems $ info ^. qAttrs)
+      where
+        aux :: Address -> (A.Type, Integer) -> GenM Address
+        aux ret (t, nr) = case t ^. A.aa of
+            A.Str -> do
+                stringLoc <- freshLoc t
+                newRet <- freshLoc typ
+                emitExpr $ StringLit stringLoc Nothing
+                emitExpr $ SetAttr newRet ret nr (Location stringLoc)
+                return newRet
+            _ -> return ret
     A.EString string -> do
         ret <- freshLoc $ A.makeAbs A.Str
         emitExpr $ StringLit ret string
