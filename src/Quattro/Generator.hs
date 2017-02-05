@@ -45,7 +45,7 @@ genClsDef clsDef = do
 
         vTables<- M.mapMaybe (getMethodNumberFromClsInfo (method ^. singular A.methodName)) <$> use classInfo
         emitExpr $ IsMethod fName $ M.mapKeys getVTableName vTables
-        mapM_ (uncurry $ genFunArg block) (zip [0..] $ ((A.selfArg clsDef) ^. A.aa) : args)
+        mapM_ (uncurry $ genFunArg block) (zip [0..] $ (A.selfArg clsDef ^. A.aa) : args)
         genBlock (method ^. singular A.methodBlock)
 
 
