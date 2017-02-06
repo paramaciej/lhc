@@ -87,13 +87,18 @@ calculateInSets (ClearFunction _ blockMap) = findFixPoint
 
 stmtMod :: Stmt -> (AliveSet -> AliveSet)
 stmtMod = \case
-    Mov dest val -> auxMov dest val
-    FunArg dest _ -> S.delete dest
-    BinStmt dest _ val1 val2 -> auxBinOp dest val1 val2
-    CmpStmt dest _ val1 val2 -> auxBinOp dest val1 val2
-    UniStmt dest _ val -> auxMov dest val
-    Call dest _ vs -> auxValues vs . S.delete dest
-    StringLit dest _ -> S.delete dest
+    IsMethod _ _                -> id
+    Mov dest val                -> auxMov dest val
+    FunArg dest _               -> S.delete dest
+    BinStmt dest _ val1 val2    -> auxBinOp dest val1 val2
+    CmpStmt dest _ val1 val2    -> auxBinOp dest val1 val2
+    UniStmt dest _ val          -> auxMov dest val
+    Call dest _ vs              -> auxValues vs . S.delete dest
+    StringLit dest _            -> S.delete dest
+    New dest _ _ _              -> S.delete dest
+    CallVirtual dest obj _ vs   -> auxValues vs . S.insert obj . S.delete dest
+    SetAttr dest obj _ val      -> auxVal val . S.insert obj . S.delete dest
+    GetAttr dest obj _          -> S.insert obj . S.delete dest
   where
     auxValues = foldr ((.) . auxVal) id
     auxMov dest val = auxVal val . S.delete dest
@@ -112,10 +117,12 @@ setFromOut mp = \case
     Ret val -> case val of
         Literal _ -> S.empty
         Location addr -> S.singleton addr
+        Null _ -> S.empty
     VRet -> S.empty
 
 auxVal :: Value -> (AliveSet -> AliveSet)
 auxVal (Literal _) = id
+auxVal (Null _) = id
 auxVal (Location addr) = S.insert addr
 
 lookupMax :: M.Map k a -> Maybe (k, a)

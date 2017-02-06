@@ -21,7 +21,7 @@ data Register = Register
     } deriving (Eq, Ord)
 
 
-data Reg = RAX | RDX | RBX | RCX | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
+data Reg = R11 | R10 | RAX | R9 | R8 | RCX | RDX | RSI | RDI | RBX | R12 | R13 | R14 | R15
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 argRegs :: [Reg]
@@ -30,13 +30,13 @@ argRegs = [RDI, RSI, RDX, RCX, R8, R9]
 calleeSaveRegs :: [Reg]
 calleeSaveRegs = [RBX, R12, R13, R14, R15]
 
-data RealLoc = RegisterLoc Register | Stack RegType Integer
+data RealLoc = RegisterLoc Register | Stack RegType Integer | Memory Register Integer
   deriving (Eq, Ord)
 
 data Value
     = Location RealLoc
     | IntLiteral Integer
-    | StrLiteral Integer
+    | RoDataLiteral String
   deriving Eq
 
 newtype ALabel = ALabel Q.Label
@@ -75,6 +75,7 @@ data AsmStmt
     | Globl String
     | Custom String
     | RoString Integer String
+    | VTable String [String]
     | SectionRoData
     | SectionText
   deriving Eq
@@ -88,6 +89,7 @@ data AllocSt = AllocSt
 data RoDataSt = RoDataSt
     { _roEmptyString :: Bool
     , _roStrings :: M.Map Integer String
+    , _roVTables :: M.Map String (M.Map Integer String)
     }
 
 data StmtWithAlive = StmtWithAlive
@@ -106,7 +108,7 @@ instance Show ALabel where
 
 instance Show Value where
     show (IntLiteral int)   = "$" ++ show int
-    show (StrLiteral nr)    = "$_STRING_" ++ show nr
+    show (RoDataLiteral l)  = "$" ++ l
     show (Location realLoc) = show realLoc
 
 instance Show Register where
@@ -143,37 +145,39 @@ instance Show Register where
             R15 -> "r15d"
 
 instance Show RealLoc where
-    show (RegisterLoc register) = show register
-    show (Stack _ pos)          = show ((-8) * (pos + 1)) ++ "(%rbp)"
+    show (RegisterLoc register)  = show register
+    show (Stack _ pos)           = show ((-8) * (pos + 1)) ++ "(%rbp)"
+    show (Memory register shift) = show (shift * 8) ++ "(" ++ show register ++ ")"
 
 instance Show AsmStmt where
     show (Globl str)    = ".globl " ++ str
     show (Label str)    = str ++ ":"
-    show (Mov v1 v2)    = sufFromVal v1 "mov" ++ show v1 ++ ", " ++ show v2
-    show (Cmp v1 v2)    = sufFromVal v1 "cmp" ++ show v1 ++ ", " ++ show v2
+    show (Mov v1 v2)    = sufFromTwoVal v1 (Location v2) "mov" ++ show v1 ++ ", " ++ show v2
+    show (Cmp v1 v2)    = sufFromTwoVal v1 (Location v2) "cmp" ++ show v1 ++ ", " ++ show v2
     show (Jmp label)    = align "jmp" ++ label
     show (Jz  label)    = align "jz" ++ label
-    show (Push val)     = sufFromVal val "push" ++ show val
-    show (Pop loc)      = sufFromVal (Location loc) "pop" ++ show loc
+    show (Push val)     = align "pushq" ++ show val
+    show (Pop loc)      = align "popq" ++ show loc
     show (Call fun)     = align "call" ++ fun
     show LeaveRet       = align "leave" ++ "\n" ++ align "ret"
-    show (IMul v1 v2)   = sufFromVal v1 "imul" ++ show v1 ++ ", " ++ show v2
+    show (IMul v1 v2)   = sufFromTwoVal v1 (Location $ RegisterLoc v2) "imul" ++ show v1 ++ ", " ++ show v2
     show (IDiv v1)      = sufFromVal (Location v1) "idiv" ++ show v1
     show CDQ            = align "cdq"
-    show (Xor v1 v2)    = sufFromVal v1 "xor" ++ show v1 ++ ", " ++ show v2
+    show (Xor v1 v2)    = sufFromTwoVal v1 (Location v2) "xor" ++ show v1 ++ ", " ++ show v2
     show (Not v1)       = sufFromVal (Location v1) "not" ++ show v1
     show SectionRoData  = ".section .rodata"
     show SectionText    = ".section .text"
     show (RoString i s) = "_STRING_" ++ show i ++ ":\n  .string " ++ s
+    show (VTable n vs)  = n ++ ":\n" ++ unlines (map ("  .quad " ++) vs)
     show (Custom s)   = s
     show (BinStmt op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
-        opShow = sufFromVal v1 $ case op of
+        opShow = sufFromTwoVal v1 (Location v2) $ case op of
             Add -> "add"
             Sub -> "sub"
     show (CondMov op v1 v2) = opShow ++ show v1 ++ ", " ++ show v2
       where
-        opShow = sufFromVal (Location v1) $ case op of
+        opShow = sufFromTwoVal (Location v1) (Location v2) $ case op of
             LTH -> "cmovl"
             LEQ -> "cmovle"
             GTH -> "cmovg"
@@ -184,14 +188,36 @@ instance Show AsmStmt where
 valType :: Value -> RegType
 valType (Location (RegisterLoc (Register x _))) = x
 valType (Location (Stack x _ )) = x
+valType (Location (Memory (Register x _) _)) = x
 valType (IntLiteral _) = Int
-valType (StrLiteral _) = Ptr
+valType (RoDataLiteral _) = Ptr
+
+twoValType :: Value -> Value -> RegType
+twoValType v1 v2
+    | valType v1 == valType v2 = valType v1
+    | otherwise = case (v1, v2) of
+        (Location (RegisterLoc (Register x _)), Location (Memory _ _)) -> x
+        (Location (RegisterLoc (Register x _)), IntLiteral _) -> x
+        (Location (Stack x _), Location (Memory _ _)) -> x
+        (Location (Stack x _), IntLiteral _) -> x
+        (Location (Memory _ _), Location (RegisterLoc (Register x _))) -> x
+        (Location (Memory _ _), Location (Stack x _)) -> x
+        (Location (Memory (Register x _) _), IntLiteral _) -> x
+        (IntLiteral _, Location (RegisterLoc (Register x _ ))) -> x
+        (IntLiteral _, Location (Stack x _ )) -> x
+        (IntLiteral _, Location (Memory (Register x _) _)) -> x
+        _ -> error "panic: wrong operands types!"
 
 align :: String -> String
 align = printf "  %-6s "
 
 sufFromVal :: Value -> String -> String
 sufFromVal v op = align $ case valType v of
+    Int -> op ++ "l"
+    Ptr -> op ++ "q"
+
+sufFromTwoVal :: Value -> Value -> String -> String
+sufFromTwoVal v1 v2 op = align $ case twoValType v1 v2 of
     Int -> op ++ "l"
     Ptr -> op ++ "q"
 
@@ -209,7 +235,7 @@ isRegLoc _ = False
 initialAllocSt :: Q.AliveSet -> AllocSt
 initialAllocSt inSet = AllocSt (M.fromList $ zipWith aux (S.toList inSet) [0..]) (M.fromList $ map (\r -> (r, Nothing)) [minBound..]) []
   where
-    aux addr int = (addr, S.singleton $ Stack (addr ^. Q.addressType) int)
+    aux addr int = (addr, S.singleton $ Stack (Q.typeToRegType (addr ^. Q.addressType)) int)
 
 
 stmtsWithAlive :: M.Map Q.Label Q.AliveSet -> Q.ClearBlock -> [StmtWithAlive]

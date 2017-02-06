@@ -26,14 +26,6 @@ class Positioned a where
     position :: a -> Position
 
 
-instance Positioned PInt where
-    position (PInt x) = calculate x
-instance Positioned PStr where
-    position (PStr x) = calculate x
-instance Positioned PBool where
-    position (PBool x) = calculate x
-instance Positioned PVoid where
-    position (PVoid x) = calculate x
 instance Positioned PRet where
     position (PRet x) = calculate x
 instance Positioned PIf where
@@ -96,19 +88,41 @@ instance Positioned PString where
     position (PString x) = calculate x
 instance Positioned PIdent where
     position (PIdent x) = calculate x
+instance Positioned PClass where
+    position (PClass x) = calculate x
+instance Positioned PExtends where
+    position (PExtends x) = calculate x
+instance Positioned PNew where
+    position (PNew x) = calculate x
+instance Positioned PDot where
+    position (PDot x) = calculate x
+instance Positioned PNull where
+    position (PNull x) = calculate x
 
 
 instance Positioned Program where
     position (Program tds) = combineBeginEnd (head tds) (last tds)
 
 instance Positioned TopDef where
-    position (FnDef t _ _ _ _ block) = combineBeginEnd t block
+    position (FnDef t _ _ _ _ block)  = combineBeginEnd t block
+    position (ClsDef c _ body)        = combineBeginEnd c body
+    position (ClsDefExt c _ _ _ body) = combineBeginEnd c body
+
+instance Positioned ClassStmt where
+    position (Attr t _ semicolon)       = combineBeginEnd t semicolon
+    position (Method t _ _ _ _ block)   = combineBeginEnd t block
+
+instance Positioned AttrItem where
+    position (AttrItem i) = position i
 
 instance Positioned Arg where
     position (Arg t i) = combineBeginEnd t i
 
 instance Positioned Block where
     position (Block curlyBegin _ curlyEnd) = Position (begin $ position curlyBegin) (end $ position curlyEnd)
+
+instance Positioned ClassBody where
+    position (ClassBody curlyBegin _ curlyEnd) = Position (begin $ position curlyBegin) (end $ position curlyEnd)
 
 instance Positioned Stmt where
     position (Empty semicolon)          = position semicolon
@@ -124,23 +138,25 @@ instance Positioned Stmt where
     position (While pWhile _ _ _ s)     = combineBeginEnd pWhile s
     position (SExp expr semicolon)      = combineBeginEnd expr semicolon
 
+instance Positioned LValue where
+    position (LVar i) = position i
+    position (LMember i _ n) = combineBeginEnd i n
+
 instance Positioned Item where
     position (NoInit i)     = position i
     position (Init i _ expr)  = combineBeginEnd i expr
 
 instance Positioned Type where
-    position (Int x)    = position x
-    position (Str x)    = position x
-    position (Bool x)   = position x
-    position (Void x)   = position x
+    position (VType x)  = position x
     position Fun {}     = error "impossible happened"
 
 instance Positioned Expr where
-    position (EVar i)           = position i
+    position (ERVal rval)       = position rval
     position (ELitInt int)      = position int
     position (ELitTrue true)    = position true
     position (ELitFalse false)  = position false
-    position (EApp i _ _ par)   = combineBeginEnd i par
+    position (ENull pB _ pNull) = combineBeginEnd pB pNull
+    position (ENew n cls)       = combineBeginEnd n cls
     position (EString str)      = position str
     position (Neg neg expr)     = combineBeginEnd neg expr
     position (Not not expr)     = combineBeginEnd not expr
@@ -150,6 +166,10 @@ instance Positioned Expr where
     position (EAnd e1 _ e2)     = combineBeginEnd e1 e2
     position (EOr e1 _ e2)      = combineBeginEnd e1 e2
     position (ECoerc pB _ pE)   = combineBeginEnd pB pE
+
+instance Positioned RValue where
+    position (RLValue lval)     = position lval
+    position (RApp lval _ _ pE) = combineBeginEnd lval pE
 
 instance Positioned AddOp where
     position (Plus x)   = position x

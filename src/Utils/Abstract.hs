@@ -46,28 +46,76 @@ newtype AIdent = Ident
     { _identString :: String
     } deriving (Eq, Ord)
 
+makeLenses ''AIdent
+
 instance Show AIdent where
-    show = _identString
+    show i = case _identString i of
+        "self" -> yellow "self"
+        ident -> ident
 
 type Program = AbsPos AProgram
-newtype AProgram = Program
-    { _programTopDefs :: [TopDef]
+data AProgram = Program
+    { _programClasses   :: [ClsDef]
+    , _programFunctions :: [FnDef]
     }
 
 instance Show AProgram where
-    show (Program topDefs) = intercalate "\n" (map absShow topDefs)
+    show (Program cls fns) = intercalate "\n" (map absShow cls) ++ "\n" ++ intercalate "\n" (map absShow fns)
 
-type TopDef = AbsPos ATopDef
-data ATopDef = FnDef
-    { _topDefType   :: Type
-    , _topDefIdent  :: Ident
-    , _topDefArgs   :: [Arg]
-    , _topDefBlock  :: Block
+type FnDef = AbsPos AFnDef
+data AFnDef = FnDef
+    { _fnDefType   :: Type
+    , _fnDefIdent  :: Ident
+    , _fnDefArgs   :: [Arg]
+    , _fnDefBlock  :: Block
     }
 
-instance Show ATopDef where
-    show (FnDef t ident args block) = absShow t ++ " " ++ absShow ident ++ " ("
-        ++ intercalate "," (map absShow args) ++ ") " ++ absShow block
+type ClsDef = AbsPos AClsDef
+data AClsDef = ClsDef
+    { _clsDefIdent  :: Ident
+    , _clsDefExtend :: Maybe Ident
+    , _clsDefBody   :: ClassBody
+    }
+
+instance Show AFnDef where
+    show (FnDef t ident args block) = absShow t ++ " " ++ absShow ident ++ "("
+        ++ intercalate ", " (map absShow args) ++ ") " ++ absShow block
+
+instance Show AClsDef where
+    show (ClsDef i mExt body) = green "class " ++ red (absShow i) ++ ext ++ absShow body
+      where
+        ext = case mExt of
+            Nothing -> " "
+            Just e -> green " extends " ++ red (absShow e) ++ " "
+
+type ClassBody = AbsPos AClassBody
+newtype AClassBody = ClassBody
+    { _classBodyStmts :: [ClassStmt]
+    }
+
+instance Show AClassBody where
+    show (ClassBody stmts) = "{\n" ++ indentStr (unlines $ map absShow stmts) ++ "}"
+
+type ClassStmt = AbsPos AClassStmt
+data AClassStmt
+    = Attr { _attrType :: Type, _attrItems :: [AttrItem] }
+    | Method
+        { _methodRetType :: Type
+        , _methodName :: Ident
+        , _methodArgs :: [Arg]
+        , _methodBlock :: Block
+        }
+
+instance Show AClassStmt where
+    show (Attr t items) = absShow t ++ " " ++ intercalate ", " (map absShow items) ++ ";"
+    show (Method t name args block) = absShow t ++ " " ++ absShow name ++ "("
+        ++ intercalate ", " (map absShow args) ++ ") " ++ absShow block
+
+type AttrItem = AbsPos AAttrItem
+newtype AAttrItem = AttrItem Ident
+
+instance Show AAttrItem where
+    show (AttrItem ident) = absShow ident
 
 type Arg = AbsPos AArg
 data AArg = Arg
@@ -96,9 +144,9 @@ data AStmt
     = Empty
     | BStmt {_bStmtBlock :: Block}
     | Decl  {_declType ::Type, _declItems :: [Item]}
-    | Ass   {_assIdent :: Ident, _assExpr :: Expr}
-    | Incr  {_incrIdent :: Ident}
-    | Decr  {_decrIdent :: Ident}
+    | Ass   {_assLValue :: LValue, _assExpr :: Expr}
+    | Incr  {_incrLValue :: LValue}
+    | Decr  {_decrLValue :: LValue}
     | Ret   {_retExpr :: Expr}
     | VRet
     | Cond { _condExpr :: Expr, _condBl :: Block }
@@ -129,29 +177,40 @@ instance Show AItem where
     show (NoInit ident) = absShow ident
     show (Init ident expr) = absShow ident ++ " = " ++ absShow expr
 
+type LValue = AbsPos ALValue
+data ALValue = LVar Ident | LMember LValue Ident
+  deriving Eq
+
+instance Show ALValue where
+    show (LVar ident) = absShow ident
+    show (LMember obj attr) = absShow obj ++ "." ++ absShow attr
+
 type Type = AbsPos AType
 data AType
     = Int
     | Str
     | Bool
     | Void
+    | ClsType Ident
     | Fun Type [Type]
-  deriving Eq
+  deriving (Eq, Ord)
 
 instance Show AType where
     show Int = colorize [SetColor Foreground Vivid Blue] "int"
     show Str = colorize [SetColor Foreground Vivid Magenta] "string"
     show Bool = colorize [SetColor Foreground Vivid Cyan] "boolean"
     show Void = colorize [SetColor Foreground Vivid Cyan] "void"
+    show (ClsType ident) = colorize [SetColor Foreground Vivid Red] (ident ^. aa . identString)
     show (Fun t args) = "(" ++ intercalate ", " (map absShow args) ++ ")"
         ++ colorize [SetColor Foreground Dull Yellow] " -> " ++ absShow t
 
 type Expr = AbsPos AExpr
 data AExpr
-    = EVar Ident
+    = ERVal RValue
     | ELitInt Integer
     | ELitBool Bool
-    | EApp Ident [Expr]
+    | ENull Type
+    | ENew Type
     | EString (Maybe String)
     | Neg Expr
     | Not Expr
@@ -163,10 +222,11 @@ data AExpr
   deriving Eq
 
 instance Show AExpr where
-    show (EVar ident) = absShow ident
+    show (ERVal rval) = absShow rval
     show (ELitInt int) = colorize [SetColor Foreground Dull Blue] $ show int
     show (ELitBool bool) = colorize [SetColor Foreground Dull Cyan] $ if bool then "true" else "false"
-    show (EApp ident args) = absShow ident ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
+    show (ENull t) = "(" ++ absShow t ++ ")null"
+    show (ENew t) = colorize [SetColor Foreground Vivid Green] "new " ++ absShow t
     show (EString str) = colorize [SetColor Foreground Dull Magenta] (fromMaybe "<EMPTY STRING>" str)
     show (Neg expr) = "-" ++ absShow expr
     show (Not expr) = "!" ++ absShow expr
@@ -175,6 +235,23 @@ instance Show AExpr where
     show (ERel e1 op e2) = absShow e1 ++ " " ++ absShow op ++ " " ++ absShow e2
     show (EAnd e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " && " ++ absShow e2
     show (EOr e1 e2) = absShow e1 ++ colorize [SetColor Foreground Vivid Yellow] " || " ++ absShow e2
+
+
+type RValue = AbsPos ARValue
+data ARValue
+    = RLValue LValue
+    | RApp LValue [Expr]
+  deriving Eq
+
+data ClassMemberKind = AttrKind | MethodKind
+
+instance Show ClassMemberKind where
+    show AttrKind = "attribute"
+    show MethodKind = "method"
+
+instance Show ARValue where
+    show (RLValue lval) = absShow lval
+    show (RApp obj args) = absShow obj ++ "(" ++ intercalate ", " (map absShow args) ++ ")"
 
 type MulOp = AbsPos AMulOp
 data AMulOp = Times | Div | Mod
@@ -209,9 +286,15 @@ instance Show ARelOp where
         NEQ -> "!="
 
 
-makeLenses ''AIdent
 makeLenses ''AProgram
-makeLenses ''ATopDef
+makeLenses ''AFnDef
+makeLenses ''AClsDef
+makeLenses ''AClassBody
+makeLenses ''AClassStmt
 makeLenses ''AArg
 makeLenses ''ABlock
 makeLenses ''AStmt
+
+
+selfArg :: ClsDef -> Arg
+selfArg clsDef = makeAbs $ Arg (makeAbs $ ClsType $ clsDef ^. aa . clsDefIdent) (makeAbs $ Ident "self")

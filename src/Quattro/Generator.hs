@@ -4,24 +4,59 @@ module Quattro.Generator where
 import Quattro.Types
 import qualified Utils.Abstract as A
 import Utils.Types
+import Utils.Verbose
 
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
+import Data.Foldable
 import qualified Data.Map as M
 
 genProgram :: A.Program -> GenM ()
-genProgram program = mapM_ genTopDef (program ^. A.aa . A.programTopDefs)
+genProgram program = do
+    mapM_ genFnDef  (program ^. A.aa . A.programFunctions)
+    mapM_ genClsDef (program ^. A.aa . A.programClasses)
 
-genTopDef :: A.TopDef -> GenM ()
-genTopDef topDef = do
-    let block = topDef ^. A.aa . A.topDefBlock
-    let ident = topDef ^. A.aa . A.topDefIdent
+genFnDef :: A.FnDef -> GenM ()
+genFnDef fnDef = do
+    let block = fnDef ^. A.aa . A.fnDefBlock
+    let ident = fnDef ^. A.aa . A.fnDefIdent
 
     codeForFun ident
-    mapM_ (uncurry $ genFunArg block) (zip [0..] $ topDef ^. A.aa . A.topDefArgs ^.. traverse . A.aa)
+    mapM_ (uncurry $ genFunArg block) (zip [0..] $ fnDef ^. A.aa . A.fnDefArgs ^.. traverse . A.aa)
 
     genBlock block
+
+
+genClsDef :: A.ClsDef -> GenM ()
+genClsDef clsDef = do
+    let methods = filter isMethod $ clsDef ^. A.aa . A.clsDefBody . A.aa . A.classBodyStmts ^.. traverse . A.aa
+    mapM_ genMethod methods
+  where
+    isMethod A.Attr{} = False
+    isMethod A.Method{} = True
+    genMethod method = do
+        let fName = let cName = (clsDef ^. A.aa . A.clsDefIdent . A.aa . A.identString);
+                            mName = (method ^. A.methodName . A.aa . A.identString)
+                    in "_class_" ++ cName ++ "_" ++ show (length cName) ++ "_" ++ mName ++ "_" ++ show (length mName)
+        let block = method ^. singular A.methodBlock
+        let args = method ^. singular A.methodArgs ^.. traverse . A.aa
+        codeForFun (A.makeAbs $ A.Ident fName)
+
+        vTables<- M.mapMaybe (getMethodNumberFromClsInfo (method ^. singular A.methodName)) <$> use classInfo
+        emitExpr $ IsMethod fName $ M.mapKeys getVTableName vTables
+        mapM_ (uncurry $ genFunArg block) (zip [0..] $ (A.selfArg clsDef ^. A.aa) : args)
+        genBlock (method ^. singular A.methodBlock)
+
+
+    getMethodNumberFromClsInfo :: A.Ident -> ClsInfo -> Maybe Integer
+    getMethodNumberFromClsInfo mIdent clsInfo = aux (mIdent `M.lookup` (clsInfo ^. qMethods))
+      where
+        aux (Just (_, nr, cls)) = if cls == clsDef ^. A.aa . A.clsDefIdent then Just nr else Nothing
+        aux Nothing = Nothing
+    getVTableName ident = let cName = (ident ^. A.aa . A.identString) in "_vtable_" ++ cName ++ "_" ++ show (length cName)
+
+
 
 codeForFun :: A.Ident -> GenM ()
 codeForFun ident = do
@@ -45,23 +80,23 @@ genStmt block = A.ignorePos $ \case
     A.Decl typ items -> forM_ items $ A.ignorePos $ \case
         A.NoInit ident -> do
             val <- genExpr (defaultValForType typ)
-            declareWithType block ident typ
+            declare block ident typ
             setLocal ident val
         A.Init ident expr -> do
             val <- genExpr expr
-            declareWithType block ident typ
+            declare block ident typ
             setLocal ident val
-    A.Ass ident expr -> genExpr expr >>= setLocal ident
-    A.Incr ident -> do
-        loc <- getLocal ident
-        temp <- freshLocForIdent ident
+    A.Ass lval expr -> genExpr expr >>= setLocalLValue lval
+    A.Incr lval -> do
+        loc <- genLValueExpr lval
+        temp <- freshLocForLValue lval
         emitExpr $ BinStmt temp Add (Location loc) (Literal 1)
-        setLocal ident $ Location temp
-    A.Decr ident -> do
-        loc <- getLocal ident
-        temp <- freshLocForIdent ident
+        setLocalLValue lval $ Location temp
+    A.Decr lval -> do
+        loc <- genLValueExpr lval
+        temp <- freshLocForLValue lval
         emitExpr $ BinStmt temp Sub (Location loc) (Literal 1)
-        setLocal ident $ Location temp
+        setLocalLValue lval $ Location temp
     A.Ret expr -> do
         temp <- genExpr expr
         quitBlock $ Ret temp
@@ -99,19 +134,49 @@ genStmt block = A.ignorePos $ \case
 
 genExpr :: A.Expr -> GenM Value
 genExpr = A.ignorePos $ \case
-    A.EVar ident -> Location <$> getLocal ident
+    A.ERVal rvalue -> case rvalue ^. A.aa of
+        A.RLValue lvalue -> Location <$> genLValueExpr lvalue
+        A.RApp lvalue args -> do
+            values <- mapM genExpr args
+            case lvalue ^. A.aa of
+                A.LVar function -> use (funRetTypes . at function) >>= \case
+                    Just typ -> do
+                        ret <- freshLoc typ
+                        emitExpr $ Call ret (function ^. A.aa . A.identString) values
+                        return $ Location ret
+                    Nothing -> error $ "RETURN TYPE FOR FUNCTION " ++ A.absShow function ++ " NOT FOUND"
+                A.LMember obj method -> do
+                    objAddr <- genLValueExpr obj
+                    info <- getClassInfo objAddr
+                    case info ^. qMethods . at method of
+                        Just (typ, number, _) -> do
+                            let A.Fun retType _ = typ ^. A.aa
+                            ret <- freshLoc retType
+                            emitExpr $ CallVirtual ret objAddr number values
+                            return $ Location ret
+                        Nothing -> error $ "METHOD " ++ A.absShow method ++ " NOT FOUND"
     A.ELitInt int -> return $ Literal int
     A.ELitBool bool -> return $ Literal $ if bool then 1 else 0
-    A.EApp ident args -> do
-        values <- mapM genExpr args
-        use (funRetTypes . at ident) >>= \case
-            Just typ -> do
-                ret <- freshLoc typ
-                emitExpr $ Call ret (ident ^. A.aa . A.identString) values
-                return $ Location ret
-            Nothing -> error $ "TYPE FOR FUNC " ++ show ident ++ " NOT FOUND"
+    A.ENull typ -> return $ Null typ
+    A.ENew typ -> do
+        ret <- freshLoc typ
+        info <- getClassInfoFromType typ
+        let size = toInteger $ 8 * (1 + info ^. qAttrs . to length)
+        let A.ClsType ident = typ ^. A.aa
+        emitExpr $ New ret (ident ^. A.aa . A.identString) size (info ^. qMethods . to length > 0)
+        Location <$> foldlM aux ret (M.elems $ info ^. qAttrs)
+      where
+        aux :: Address -> (A.Type, Integer) -> GenM Address
+        aux ret (t, nr) = case t ^. A.aa of
+            A.Str -> do
+                stringLoc <- freshLoc t
+                newRet <- freshLoc typ
+                emitExpr $ StringLit stringLoc Nothing
+                emitExpr $ SetAttr newRet ret nr (Location stringLoc)
+                return newRet
+            _ -> return ret
     A.EString string -> do
-        ret <- freshLoc Ptr
+        ret <- freshLoc $ A.makeAbs A.Str
         emitExpr $ StringLit ret string
         return $ Location ret
 
@@ -136,14 +201,30 @@ genExpr = A.ignorePos $ \case
                 [ m (A.Decl (m A.Bool) [m $ A.Init tempIdent e1])
                 , m (A.Cond
                     (if or
-                        then m $ A.Not (m $ A.EVar tempIdent)
-                        else m $ A.EVar tempIdent)
-                    (m $ A.Block [m $ A.Ass tempIdent e2]))
+                        then m $ A.Not (m $ A.ERVal $ m $ A.RLValue $ m $ A.LVar tempIdent)
+                        else m $ A.ERVal $ m $ A.RLValue $ m $ A.LVar tempIdent)
+                    (m $ A.Block [m $ A.Ass (m $ A.LVar tempIdent) e2]))
                 ])
         mapM_ (genStmt tempBlock) (tempBlock ^. A.aa . A.blockStmts)
-        val <- genExpr (m $ A.EVar tempIdent)
+        val <- genExpr (m $ A.ERVal $ m $ A.RLValue $ m $ A.LVar tempIdent)
         locals . at tempIdent .= Nothing
         return val
+
+genLValueAddrMod :: (A.Ident -> GenM Address) -> A.LValue -> GenM Address
+genLValueAddrMod mod = A.ignorePos $ \case
+    A.LVar ident -> mod ident
+    A.LMember lval member -> do
+        addr <- genLValueExpr lval
+        info <- getClassInfo addr
+        case info ^. qAttrs . at member of
+            Just (typ, number) -> do
+                ret <- freshLoc typ
+                emitExpr $ GetAttr ret addr number
+                return ret
+            Nothing -> error $ "ATTRIBUTE " ++ A.absShow member ++ " NOT FOUND"
+
+genLValueExpr :: A.LValue -> GenM Address
+genLValueExpr = genLValueAddrMod getLocal
 
 
 genMov :: Address -> Value -> GenM ()
@@ -152,7 +233,7 @@ genMov to from = emitExpr $ Mov to from
 
 genFunArg :: A.Block -> Integer -> A.AArg -> GenM ()
 genFunArg block number arg = do
-    declareWithType block (arg ^. A.argIdent) (arg ^. A.argType)
+    declare block (arg ^. A.argIdent) (arg ^. A.argType)
     label <- use currentBlock
     addr <- use $ locals . at (arg ^. A.argIdent) . singular _Just . address . at label . singular _Just
     emitExpr $ FunArg addr number
@@ -178,7 +259,7 @@ genRelOp :: RelOp -> A.Expr -> A.Expr -> GenM Value
 genRelOp op e1 e2 = do
     loc1 <- genExpr e1
     loc2 <- genExpr e2
-    ret <- freshLoc Int
+    ret <- freshLoc $ A.makeAbs A.Int
     emitExpr $ CmpStmt ret op loc1 loc2
     return $ Location ret
 
@@ -196,21 +277,25 @@ emitExprIn label stmt = do
     aux :: QBlock -> QBlock
     aux qBlock = case qBlock ^. out of
             Nothing -> qBlock & blockStmts %~ cons stmt
-            Just _ -> error "TRYING TO ADD A STMT TO A QUITED BLOCK"
+            Just _ -> qBlock
 
-freshLoc :: RegType -> GenM Address
-freshLoc regType = do
+freshLoc :: A.Type -> GenM Address
+freshLoc typ = do
     lastLoc <- use addressMax
     addressMax += 1
-    return $ Address lastLoc regType
+    return $ Address lastLoc typ
 
 
 freshLocForIdent :: A.Ident -> GenM Address
 freshLocForIdent ident = use (locals . at ident . singular _Just . locType) >>= freshLoc
 
+freshLocForLValue :: A.LValue -> GenM Address
+freshLocForLValue = genLValueAddrMod freshLocForIdent
+
 freshLocForValue :: Value -> GenM Address
-freshLocForValue (Literal _) = freshLoc Int
+freshLocForValue (Literal _) = freshLoc $ A.makeAbs A.Int
 freshLocForValue (Location (Address _ t)) = freshLoc t
+freshLocForValue (Null t) = freshLoc t
 
 freshBlock :: GenM Label
 freshBlock = do
@@ -223,34 +308,46 @@ freshBlock = do
 setActiveBlock :: Label -> GenM ()
 setActiveBlock label = currentBlock .= label
 
-declare :: A.Block -> A.Ident -> RegType -> GenM ()
+declare :: A.Block -> A.Ident -> A.Type -> GenM ()
 declare block ident typ = do
     addr <- freshLoc typ
     label <- use currentBlock
     oldInfo <- use (locals . at ident)
     locals . at ident .= Just (LocalInfo (M.fromList [(label, addr)]) typ (InBlock block) oldInfo)
 
-declareWithType :: A.Block -> A.Ident -> A.Type -> GenM ()
-declareWithType block ident = declare block ident . typeToRegType
-
-typeToRegType :: A.Type -> RegType
-typeToRegType = A.ignorePos $ \case
-    A.Int   -> Int
-    A.Bool  -> Int
-    A.Void  -> Int
-    A.Str   -> Ptr
-    _       -> error "fun type as reg!"
+setLocalLValue :: A.LValue -> Value -> GenM ()
+setLocalLValue lval rval = case lval ^. A.aa of
+    A.LVar ident -> setLocal ident rval
+    A.LMember obj attr -> do
+        oldLeft <- genLValueExpr obj
+        newLeft <- freshLoc (oldLeft ^. addressType)
+        info <- getClassInfo oldLeft
+        case info ^. qAttrs . at attr of
+            Just (_, number) -> do
+                emitExpr $ SetAttr newLeft oldLeft number rval
+                setLocalLValue obj (Location newLeft)
+            Nothing -> error $ "ATTRIBUTE " ++ A.absShow attr ++ " NOT FOUND"
 
 setLocal :: A.Ident -> Value -> GenM ()
 setLocal ident val = do
     bl <- use currentBlock
     case val of
         Location addr -> locals . at ident . _Just . address . at bl .= Just addr
-        Literal _ -> do
+        _ -> do
             -- we don't use getLocal, because previous value of variable doesn't interest us here
             newAddr <- freshLocForValue val
             locals . at ident . _Just . address . at bl .= Just newAddr
             genMov newAddr val
+
+getClassInfo :: Address -> GenM ClsInfo
+getClassInfo addr = getClassInfoFromType $ addr ^. addressType
+
+getClassInfoFromType :: A.Type -> GenM ClsInfo
+getClassInfoFromType = A.ignorePos $ \case
+    A.ClsType ident -> use (classInfo . at ident) >>= \case
+        Just info -> return info
+        Nothing -> error $ "INFORMATION ABOUT CLASS " ++ A.absShow ident ++ " NOT FOUND"
+    other -> error $ "CLASS OBJECT IS NOT OF CLASS TYPE (IS: " ++ show other ++ ")"
 
 getLocal :: A.Ident -> GenM Address
 getLocal ident = do
@@ -260,12 +357,15 @@ getLocal ident = do
 getLocalFrom :: Label -> A.Ident -> GenM Address
 getLocalFrom label ident = use (locals . at ident) >>= \case
     Just info -> case info ^. address . at label of
-        Just addr -> return addr
+        Just addr -> do
+            verbosePrint $ "get local for " ++ A.absShow ident ++ " --> " ++ show addr
+            return addr
         Nothing -> genPhi label ident
-    Nothing -> error $ "LOCAL " ++ show ident ++ " UNKNOWN IN BLOCK " ++ show label
+    Nothing -> error $ "LOCAL " ++ A.absShow ident ++ " UNKNOWN IN BLOCK " ++ show label
 
 genPhi :: Label -> A.Ident -> GenM Address
 genPhi bl ident = do
+    verbosePrint $ "genphi for " ++ A.absShow ident
     fun <- getCurrentFun
     newAddr <- freshLocForIdent ident
     locals . at ident . _Just . address . at bl .= Just newAddr
@@ -326,6 +426,7 @@ defaultValForType = A.ignorePos $ \case
     A.Int -> A.makeAbs (A.ELitInt 0)
     A.Bool -> A.makeAbs (A.ELitBool False)
     A.Str -> A.makeAbs (A.EString Nothing)
+    A.ClsType cls -> A.makeAbs $ A.ENull (A.makeAbs $ A.ClsType cls)
     _ -> error "void/fun type hasn't got any default value!"
 
 qStmtGetter :: Functor f => A.Ident -> Label -> (QBlock -> f QBlock) -> QuattroSt -> f QuattroSt

@@ -40,8 +40,8 @@ main = getArgs >>= \case
                 verbosePrint $ "Parsed source:\n" ++ fullShow program
 
                 programValid (toA program) >>= \case
-                    Right () -> do
-                        let simplified = simplifyProgram (toA program)
+                    Right newProgram -> do
+                        let simplified = simplifyProgram newProgram
                         runExceptT (generateValidatedQuattro simplified) >>= \case
                             Right quattro -> do
                                 liftIO $ hPutStrLn stderr "OK"
@@ -57,7 +57,7 @@ main = getArgs >>= \case
 
                                 asmFile <- (`replaceExtension` "s") <$> asks sourceFilename
                                 lift $ writeFile asmFile code
-                                _ <- lift $ createProcess $ shell $ "gcc " ++ asmFile ++ " lib/runtime.o -o " ++ dropExtension asmFile
+                                liftIO $ callProcess "gcc" [asmFile, "lib/runtime.o", "-o", dropExtension asmFile]
                                 return ()
                             Left err -> failAndShowError err
                     Left err -> failAndShowError err

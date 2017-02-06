@@ -65,27 +65,43 @@ cutAfterReturn stmts = reverse $ drop (aux stmts) $ reverse stmts
         _ -> aux xs
     aux [] = 0
 
-simplifyTopDef :: TopDef -> TopDef
-simplifyTopDef td = let simplified = over (aa . topDefBlock) simplifyBlock td
-    in if simplified ^. aa. topDefType == makeAbs Void && isLeft (hasReturn simplified)
-        then simplified & aa . topDefBlock . aa . blockStmts %~ (++ [makeAbs VRet])
+simplifyFnDef :: FnDef -> FnDef
+simplifyFnDef td = let simplified = over (aa . fnDefBlock) simplifyBlock td
+    in if simplified ^. aa . fnDefType == makeAbs Void && isLeft (fnHasReturn simplified)
+        then simplified & aa . fnDefBlock . aa . blockStmts %~ (++ [makeAbs VRet])
         else simplified
 
+simplifyClsStmt :: ClassStmt -> ClassStmt
+simplifyClsStmt clsStmt = case clsStmt ^. aa of
+    Attr _ _ -> clsStmt
+    Method{} -> if methodIsVoid && isLeft (methodHasReturn simplified)
+        then simplified & aa . singular methodBlock . aa . blockStmts %~ (++ [makeAbs VRet])
+        else simplified
+      where
+        simplified = over (aa . singular methodBlock) simplifyBlock clsStmt
+        methodIsVoid = simplified ^. aa . singular methodRetType == makeAbs Void
+
 simplifyProgram :: Program -> Program
-simplifyProgram = forgetPos . over (aa . programTopDefs . traverse) simplifyTopDef
+simplifyProgram = forgetPos
+    . over (aa . programFunctions . traverse) simplifyFnDef
+    . over (aa . programClasses . traverse . aa . clsDefBody . aa . classBodyStmts . traverse) simplifyClsStmt
 
 
-hasReturn :: TopDef -> Either String ()
-hasReturn topDef = runExcept $ constrainReturn topDef (topDef ^. aa . topDefBlock)
+fnHasReturn :: FnDef -> Either String ()
+fnHasReturn fnDef = runExcept $ constrainReturn fnDef (fnDef ^. aa . fnDefIdent) "function" (fnDef ^. aa . fnDefBlock)
 
-constrainReturn :: TopDef -> Block -> Except String ()
-constrainReturn fun block = aux (block ^. aa . blockStmts)
+methodHasReturn :: ClassStmt -> Either String ()
+methodHasReturn clsStmt = runExcept $ constrainReturn clsStmt (clsStmt ^. aa . singular methodName) "method" (clsStmt ^. aa . singular methodBlock)
+
+constrainReturn :: AbsPos a -> Ident -> String -> Block -> Except String ()
+constrainReturn context ident display block = aux (block ^. aa . blockStmts)
   where
+    constrain = constrainReturn context ident display
     aux :: [Stmt] -> Except String ()
     aux (x:xs) = case x ^. aa of
         Ret _ -> return ()
         VRet -> return ()
-        BStmt block -> constrainReturn fun block `catchError` (\_ -> aux xs)
-        CondElse _ bTrue bFalse -> (constrainReturn fun bTrue >> constrainReturn fun bFalse) `catchError` const (aux xs)
+        BStmt block -> constrain block `catchError` (\_ -> aux xs)
+        CondElse _ bTrue bFalse -> (constrain bTrue >> constrain bFalse) `catchError` const (aux xs)
         _ -> aux xs
-    aux [] = throwError $ red ("Error in function " ++ absShow (fun ^. aa . topDefIdent) ++ " (" ++ fromJust (show <$> fun ^. pos) ++ "):") ++ " no return statement!"
+    aux [] = throwError $ red ("Error in " ++ display ++ " " ++ absShow ident ++ " (" ++ fromJust (show <$> context ^. pos) ++ "):") ++ " no return statement!"

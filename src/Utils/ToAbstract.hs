@@ -7,16 +7,32 @@ import Utils.Position
 import Utils.Show
 import qualified AbsLatte as L
 
+import Control.Lens hiding (Empty)
+
 class (ColorShow a, Positioned a) => ToAbstract a b where
     _to :: a -> b
     toA :: a -> AbsPos b
     toA a = AbsPos (Just $ position a) (Just $ cShow a) (_to a)
 
 instance ToAbstract L.Program AProgram where
-    _to (L.Program tds) = Program (map toA tds)
+    _to (L.Program tds) = Program cls fn
+      where
+        (cls, fn) = foldr aux ([], []) tds
+        aux a (accCls, accFn) = case a of
+            L.FnDef t i _ args _ block -> (accCls, auxAbs a (FnDef (toA t) (toA i) (map toA args) (toA block)) : accFn)
+            L.ClsDef _ i body          -> (auxAbs a (ClsDef (toA i) Nothing (toA body)) : accCls, accFn)
+            L.ClsDefExt _ i _ ext body -> (auxAbs a (ClsDef (toA i) (Just $ toA ext) (toA body)) : accCls, accFn)
+        auxAbs a = AbsPos (Just $ position a) (Just $ cShow a)
 
-instance ToAbstract L.TopDef ATopDef where
-    _to (L.FnDef t i _ args _ block) = FnDef (toA t) (toA i) (map toA args) (toA block)
+instance ToAbstract L.ClassBody AClassBody where
+    _to (L.ClassBody _ stmts _) = ClassBody (map toA stmts)
+
+instance ToAbstract L.ClassStmt AClassStmt where
+    _to (L.Attr t items _)                = Attr (toA t) (map toA items)
+    _to (L.Method t ident _ args _ block) = Method (toA t) (toA ident) (map toA args) (toA block)
+
+instance ToAbstract L.AttrItem AAttrItem where
+    _to (L.AttrItem item) = AttrItem (toA item)
 
 instance ToAbstract L.Arg AArg where
     _to (L.Arg t i) = Arg (toA t) (toA i)
@@ -49,23 +65,30 @@ instance ToAbstract L.Stmt AStmt where
         _ -> makeAbs (Block [toA s])
     _to (L.SExp e _) = SExp (toA e)
 
+instance ToAbstract L.LValue ALValue where
+    _to (L.LVar i) = LVar (toA i)
+    _to (L.LMember i _ a) = LMember (toA i) (toA a)
+
 instance ToAbstract L.Item AItem where
     _to (L.NoInit i) = NoInit (toA i)
     _to (L.Init i _ e) = Init (toA i) (toA e)
 
 instance ToAbstract L.Type AType where
-    _to (L.Int _)  = Int
-    _to (L.Str _)  = Str
-    _to (L.Bool _) = Bool
-    _to (L.Void _) = Void
+    _to (L.VType ident)  = let aIdent = toA ident in case aIdent ^. aa . identString of
+        "int" -> Int
+        "string" -> Str
+        "boolean" -> Bool
+        "void" -> Void
+        _ -> ClsType aIdent
     _to L.Fun{}    = error "impossible happened"
 
 instance ToAbstract L.Expr AExpr where
-    _to (L.EVar i) = EVar (toA i)
+    _to (L.ERVal rval) = ERVal (toA rval)
     _to (L.ELitInt (L.PInteger (_, int))) = ELitInt (read int)
     _to (L.ELitTrue _) = ELitBool True
     _to (L.ELitFalse _) = ELitBool False
-    _to (L.EApp i _ exprs _) = EApp (toA i) (map toA exprs)
+    _to (L.ENull _ t _) = ENull (toA t)
+    _to (L.ENew _ typ) = ENew (toA typ)
     _to (L.EString (L.PString (_, str))) = EString $ Just str
     _to (L.Neg _ e) = Neg (toA e)
     _to (L.Not _ e) = Not (toA e)
@@ -75,6 +98,10 @@ instance ToAbstract L.Expr AExpr where
     _to (L.EAnd e1 _ e2) = EAnd (toA e1) (toA e2)
     _to (L.EOr e1 _ e2) = EOr (toA e1) (toA e2)
     _to (L.ECoerc _ e _) = _to e
+
+instance ToAbstract L.RValue ARValue where
+    _to (L.RLValue lval) = RLValue (toA lval)
+    _to (L.RApp lval _ args _) = RApp (toA lval) (map toA args)
 
 instance ToAbstract L.AddOp AAddOp where
     _to (L.Plus _)  = Plus

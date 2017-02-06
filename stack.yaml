@@ -67,4 +67,4 @@ extra-package-dbs: []
 # compiler-check: newer-minor
 
 ghc-options:
-  "*": -Wunused-matches -Wincomplete-patterns -Wunused-imports -Wmissing-signatures
+  "*": -Wunused-matches -Wincomplete-patterns -Wunused-imports -Wmissing-signatures -Wunused-do-bind

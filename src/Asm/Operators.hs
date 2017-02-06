@@ -3,6 +3,7 @@ module Asm.Operators where
 
 import Control.Lens
 import Control.Monad.State
+import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe
 
@@ -28,6 +29,7 @@ genBinOp = \case
             | not (addrStayAlive argAddr aliveAfter) -> genBinOpWithReplacement addr val1 argAddr op
             | otherwise -> genBinOpWithMov addr op val1 val2
         (Q.Literal _, Q.Literal _) -> genBinOpWithMov addr op val1 val2
+        (_, _) -> error "NULL PTR"
     nonCommutativeOp op aliveAfter addr dst src = case dst of
         Q.Location addrDst
             | not (addrStayAlive addrDst aliveAfter) -> genBinOpWithReplacement addr src addrDst op
@@ -39,12 +41,27 @@ genBinOpWithReplacement :: Q.Address -> Q.Value -> Q.Address -> OrdinaryOp -> Al
 genBinOpWithReplacement newAddr (Q.Location argAddr) destAddr op = do
     (vArg, lDest) <- atLeastOneReg argAddr destAddr
     asmStmts %= (++ [BinStmt op vArg lDest])
+    clearLocationAfterBinStmt destAddr lDest
     replaceAddr destAddr newAddr
 genBinOpWithReplacement newAddr (Q.Literal literal) destAddr op = do
     let vArg = IntLiteral literal
     lDest <- fastestReadLoc destAddr
     asmStmts %= (++ [BinStmt op vArg lDest])
+    clearLocationAfterBinStmt destAddr lDest
     replaceAddr destAddr newAddr
+genBinOpWithReplacement _ (Q.Null _) _ _ = error "NULL PTR"
+
+
+clearLocationAfterBinStmt :: Q.Address -> RealLoc -> AllocM ()
+clearLocationAfterBinStmt destAddr destLoc = do
+    registers %= M.map clearRegs
+    stack . at destAddr .= Just (S.singleton destLoc)
+    case destLoc of
+        RegisterLoc (Register _ reg) -> registers . at reg .= Just (Just destAddr)
+        _ -> return ()
+  where
+    clearRegs Nothing = Nothing
+    clearRegs (Just a) = if a == destAddr then Nothing else Just a
 
 
 genBinOpWithMov :: Q.Address -> OrdinaryOp -> Q.Value -> Q.Value -> AllocM ()
@@ -113,15 +130,18 @@ genUni op addr value = case op of
         loc <- fastestReadLoc addr
         asmStmts %= (++ [Mov v loc, Not loc, BinStmt Add (IntLiteral 1) loc])
 
-genCall :: Q.Address -> String -> [Q.Value] -> AllocM ()
-genCall _ funName args = do
-    mapM_ callerSave $ [RAX, R10, R11] ++ argRegs   -- save caller-save registers -- TODO CALLERsave regs! uzupałenić
+genCall :: Q.Address -> Either RealLoc String -> [Q.Value] -> AllocM ()
+genCall _ funNameEither args = do
+    mapM_ callerSave $ [RAX, R10, R11] ++ argRegs   -- save caller-save registers
     mapM_ safeMoveToReg $ zip (take 6 args) argRegs -- move arguments to registers
 
     when (length args > 6 && odd (length args)) $ asmStmts %= (++ [Custom $ align "subq" ++ "$8, %rsp"])
     forM_ (reverse $ drop 6 args) $ \arg -> do
         val <- fastestReadVal arg
         asmStmts %= (++ [Push val])
+    let funName = case funNameEither of
+            Right str -> str
+            Left loc -> "*" ++ show loc
     asmStmts %= (++ [Call funName])
 
     let rspAdd = (length args - 6 + 1) `div` 2 * 16
@@ -136,6 +156,7 @@ genCall _ funName args = do
         Just addr -> case val of
             Q.Location valAddr -> unless (valAddr == addr) $ moveToStackAndForget addr >> emitMov val reg
             Q.Literal _ -> moveToStackAndForget addr >> emitMov val reg
+            Q.Null _ -> error "NULL PTR"
     emitMov val reg = do
         srcVal <- fastestReadVal val
         asmStmts %= (++ [Mov srcVal (RegisterLoc $ valueMatchRegister reg val)])

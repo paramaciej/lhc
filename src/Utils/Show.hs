@@ -74,14 +74,6 @@ class Positioned a => ColorShow a where
     fullShow a = "in " ++ posShow a ++ ":\n" ++ cssShow (cShow a)
 
 
-instance ColorShow PInt where
-    stShow (PInt x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Blue])
-instance ColorShow PStr where
-    stShow (PStr x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Magenta])
-instance ColorShow PBool where
-    stShow (PBool x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Cyan])
-instance ColorShow PVoid where
-    stShow (PVoid x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Cyan])
 instance ColorShow PRet where
     stShow (PRet x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
 instance ColorShow PIf where
@@ -144,6 +136,16 @@ instance ColorShow PString where
     stShow (PString x) = addFromToken x (colorizeCStr [SetColor Foreground Dull Magenta])
 instance ColorShow PIdent where
     stShow (PIdent x) = addFromToken x toCStr
+instance ColorShow PClass where
+    stShow (PClass x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
+instance ColorShow PExtends where
+    stShow (PExtends x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
+instance ColorShow PNew where
+    stShow (PNew x) = addFromToken x (colorizeCStr [SetColor Foreground Vivid Green])
+instance ColorShow PDot where
+    stShow (PDot x) = addFromToken x toCStr
+instance ColorShow PNull where
+    stShow (PNull x) = addFromToken x toCStr
 
 
 instance ColorShow Program where
@@ -153,15 +155,27 @@ instance ColorShow TopDef where
     stShow (FnDef t name parB args parE block) = do
         stShow t >> stShow name
         stShow parB >> csvShow args >> stShow parE >> stShow block
+    stShow (ClsDef cls ident body) = stShow cls >> stShow ident >> stShow body
+    stShow (ClsDefExt cls this ext parent body) = stShow cls >> stShow this >> stShow ext >> stShow parent >> stShow body
 
 instance ColorShow Arg where
     stShow (Arg t i) = stShow t >> stShow i
+
+instance ColorShow ClassBody where
+    stShow (ClassBody curlyBegin stmts curlyEnd) = stShow curlyBegin >> mapM_ stShow stmts >> stShow curlyEnd
+
+instance ColorShow ClassStmt where
+    stShow (Attr t items semicolon) = stShow t >> csvShow items >> stShow semicolon
+    stShow (Method t i parB args parE block) = stShow t >> stShow i >> stShow parB >> csvShow args >> stShow parE >> stShow block
+
+instance ColorShow AttrItem where
+    stShow (AttrItem ident) = stShow ident
 
 instance ColorShow Block where
     stShow (Block curlyBegin stmts curlyEnd) = stShow curlyBegin >> mapM_ stShow stmts >> stShow curlyEnd
 
 instance ColorShow Stmt where
-    stShow (Empty semicolon) = stShow semicolon
+    stShow (Empty semicolon)                    = stShow semicolon
     stShow (BStmt block)                        = stShow block
     stShow (Decl t is semicolon)                = stShow t >> csvShow is >> stShow semicolon
     stShow (Ass i ass expr semicolon)           = stShow i >> stShow ass >> stShow expr >> stShow semicolon
@@ -174,23 +188,31 @@ instance ColorShow Stmt where
     stShow (While pWhile parB expr parE stmt)   = stShow pWhile >> stShow parB >> stShow expr >> stShow parE >> stShow stmt
     stShow (SExp expr semicolon)                = stShow expr >> stShow semicolon
 
-instance ColorShow Item where
-    stShow (NoInit i)       = stShow i
-    stShow (Init i ass expr)    = stShow i >> stShow ass >> stShow expr
+instance ColorShow LValue where
+    stShow (LVar ident)             = stShow ident
+    stShow (LMember ident dot attr) = stShow ident >> stShow dot >> stShow attr
 
-instance ColorShow Type where
-    stShow (Int x)      = stShow x
-    stShow (Str x)      = stShow x
-    stShow (Bool x)     = stShow x
-    stShow (Void x)     = stShow x
+instance ColorShow Item where
+    stShow (NoInit i)        = stShow i
+    stShow (Init i ass expr) = stShow i >> stShow ass >> stShow expr
+
+instance ColorShow
+ Type where
+    stShow (VType (PIdent token@(_, str))) = addFromToken token $ colorizeCStr $ case str of
+        "int"       -> [SetColor Foreground Vivid Blue]
+        "string"    -> [SetColor Foreground Vivid Magenta]
+        "boolean"   -> [SetColor Foreground Vivid Cyan]
+        "void"      -> [SetColor Foreground Vivid Cyan]
+        _           -> [SetColor Foreground Vivid Red]
     stShow Fun {}       = error "impossible happened"
 
 instance ColorShow Expr where
-    stShow (EVar i)                 = stShow i
+    stShow (ERVal rval)             = stShow rval
     stShow (ELitInt int)            = stShow int
     stShow (ELitTrue true)          = stShow true
     stShow (ELitFalse false)        = stShow false
-    stShow (EApp i parB exprs parE) = stShow i >> stShow parB >> csvShow exprs >> stShow parE
+    stShow (ENull parB typ parNull) = stShow parB >> stShow typ >> stShow parNull
+    stShow (ENew new typ)           = stShow new >> stShow typ
     stShow (EString str)            = stShow str
     stShow (Neg neg expr)           = stShow neg >> stShow expr
     stShow (Not not expr)           = stShow not >> stShow expr
@@ -200,6 +222,10 @@ instance ColorShow Expr where
     stShow (EAnd e1 op e2)          = stShow e1 >> stShow op >> stShow e2
     stShow (EOr e1 op e2)           = stShow e1 >> stShow op >> stShow e2
     stShow (ECoerc parB expr parE)  = stShow parB >> stShow expr >> stShow parE
+
+instance ColorShow RValue where
+    stShow (RLValue lval) = stShow lval
+    stShow (RApp lval pB args pE) = stShow lval >> stShow pB >> csvShow args >> stShow pE
 
 instance ColorShow AddOp where
     stShow (Plus x)     = stShow x
