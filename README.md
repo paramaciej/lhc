@@ -1,12 +1,12 @@
 # lhc
 Latté (written in Haskell) Compiler
 
-# Setup
+## Setup
 
 You need Haskell Stack.
 
 ```stack install```
 
-# Compiling with LHC
+## Compiling with LHC
 
 ```./latc [-v] filename.lat```
