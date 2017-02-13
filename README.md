@@ -5,7 +5,7 @@ Latté (written in Haskell) Compiler
 
 You need Haskell Stack.
 
-```stack install```
+```make```
 
 ## Compiling with LHC
 
